@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Core/">
+    <Project Path="src/Core/GameLanguageExplorer.Core.csproj" />
+  </Folder>
+  <Folder Name="/src/Data/">
+    <Project Path="src/Data/GameLanguageExplorer.Data.csproj" />
+  </Folder>
+  <Folder Name="/src/WPF/">
+    <Project Path="src/WPF/GameLanguageExplorer.WPF.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/Tests/">
+    <Project Path="tests/Tests/GameLanguageExplorer.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,42 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        AÇIK TEMA. Koyu tema ile AYNI anahtar setini sağlar. Kontrast değerleri metin
+        okunabilirliği öncelikli olacak şekilde seçilmiştir (küçük soluk gri yok).
+    -->
+
+    <!-- Yüzeyler -->
+    <SolidColorBrush x:Key="App.Background" Color="#F4F6F9" />
+    <SolidColorBrush x:Key="App.Surface" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="App.SurfaceAlt" Color="#EDF1F6" />
+    <SolidColorBrush x:Key="App.SurfaceHover" Color="#E2E8F1" />
+    <SolidColorBrush x:Key="App.Border" Color="#D2D9E3" />
+    <SolidColorBrush x:Key="App.BorderStrong" Color="#AFBAC9" />
+
+    <!-- Metin -->
+    <SolidColorBrush x:Key="App.TextPrimary" Color="#14181F" />
+    <SolidColorBrush x:Key="App.TextSecondary" Color="#3B4453" />
+    <SolidColorBrush x:Key="App.TextMuted" Color="#5A6472" />
+    <SolidColorBrush x:Key="App.TextOnAccent" Color="#FFFFFF" />
+
+    <!-- Varsayılan vurgu -->
+    <SolidColorBrush x:Key="App.AccentDefault" Color="#2563EB" />
+
+    <!-- Tablo -->
+    <SolidColorBrush x:Key="App.GridRow" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="App.GridRowAlt" Color="#F7F9FC" />
+    <SolidColorBrush x:Key="App.Selection" Color="#DCE7FB" />
+    <SolidColorBrush x:Key="App.SelectionBorder" Color="#2563EB" />
+    <SolidColorBrush x:Key="App.FocusRing" Color="#1D4ED8" />
+
+    <!-- Durum renkleri -->
+    <SolidColorBrush x:Key="App.Success" Color="#146C37" />
+    <SolidColorBrush x:Key="App.SuccessSoft" Color="#E7F6EC" />
+    <SolidColorBrush x:Key="App.Warning" Color="#8A5A00" />
+    <SolidColorBrush x:Key="App.WarningSoft" Color="#FDF3DC" />
+    <SolidColorBrush x:Key="App.Error" Color="#B42318" />
+    <SolidColorBrush x:Key="App.ErrorSoft" Color="#FDECEA" />
+    <SolidColorBrush x:Key="App.Info" Color="#1D4ED8" />
+    <SolidColorBrush x:Key="App.InfoSoft" Color="#E8F0FE" />
+</ResourceDictionary>

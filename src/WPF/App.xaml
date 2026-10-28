@@ -1,0 +1,383 @@
+<Application x:Class="GameLanguageExplorer.WPF.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:GameLanguageExplorer.WPF.Views"
+             xmlns:viewModels="clr-namespace:GameLanguageExplorer.WPF.ViewModels"
+             xmlns:converters="clr-namespace:GameLanguageExplorer.WPF.Converters">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!--
+                    Tema sözlüğü HER ZAMAN ilk sırada olmalıdır: ThemeManager.Apply bu sözlüğü
+                    değiştirir. Varsayılan: koyu tema.
+                -->
+                <ResourceDictionary Source="Themes/DarkTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Görünürlük dönüştürücüleri -->
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+            <converters:BoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" Invert="True" />
+            <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
+            <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
+
+            <DataTemplate DataType="{x:Type viewModels:CatalogViewModel}">
+                <views:CatalogView />
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type viewModels:InstalledGamesViewModel}">
+                <views:InstalledGamesView />
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type viewModels:FileDiscoveryViewModel}">
+                <views:FileDiscoveryView />
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type viewModels:TranslationViewModel}">
+                <views:TranslationView />
+            </DataTemplate>
+
+            <!-- ── Temel tipografi ─────────────────────────────────────────────── -->
+            <Style TargetType="Window">
+                <Setter Property="Background" Value="{DynamicResource App.Background}" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="UseLayoutRounding" Value="True" />
+                <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+            </Style>
+
+            <!-- ── Buton (yuvarlatılmış, odak halkalı) ─────────────────────────── -->
+            <Style TargetType="Button">
+                <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="14,7" />
+                <Setter Property="Margin" Value="0,0,8,0" />
+                <Setter Property="MinHeight" Value="32" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Root"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"
+                                    Padding="{TemplateBinding Padding}"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                  RecognizesAccessKey="True" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.SurfaceHover}" />
+                                    <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource App.BorderStrong}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.Border}" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource App.FocusRing}" />
+                                    <Setter TargetName="Root" Property="BorderThickness" Value="2" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.45" />
+                                    <Setter Property="Cursor" Value="Arrow" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Birincicil (vurgulu) buton -->
+            <Style x:Key="App.AccentButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="BorderBrush" Value="{DynamicResource App.SelectionBorder}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+
+            <!-- ── Girdi alanları ─────────────────────────────────────────────── -->
+            <Style TargetType="TextBox">
+                <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="CaretBrush" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="MinHeight" Value="30" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Style.Triggers>
+                    <Trigger Property="IsKeyboardFocused" Value="True">
+                        <Setter Property="BorderBrush" Value="{DynamicResource App.FocusRing}" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- ── ComboBox (varsayılan şablon; renkler tema kaynaklarından) ───── -->
+            <Style TargetType="ComboBox">
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="10,0,32,0" />
+                <Setter Property="MinHeight" Value="34" />
+                <Setter Property="MaxDropDownHeight" Value="320" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+            </Style>
+
+            <Style TargetType="ComboBoxItem">
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Padding" Value="9,6" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBoxItem">
+                            <Border x:Name="Root" Background="{TemplateBinding Background}"
+                                    CornerRadius="4" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.Selection}" />
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.Selection}" />
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+
+            <Style TargetType="CheckBox">
+                <Setter Property="Foreground" Value="{DynamicResource App.TextSecondary}" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Cursor" Value="Hand" />
+            </Style>
+
+            <!-- ── Tablolar ───────────────────────────────────────────────────── -->
+            <Style TargetType="ListView">
+                <Setter Property="Background" Value="{DynamicResource App.Surface}" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+                <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+            </Style>
+
+            <Style TargetType="ListViewItem">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="Padding" Value="10,7" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListViewItem">
+                            <Border x:Name="Root"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="Transparent"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="{TemplateBinding Padding}"
+                                    SnapsToDevicePixels="True">
+                                <Grid>
+                                    <Border x:Name="AccentBar" Width="3" HorizontalAlignment="Left"
+                                            Background="Transparent" CornerRadius="2" Margin="-10,0,0,0" />
+                                    <!-- GridView sütunlarının çizilmesi için GridViewRowPresenter şart. -->
+                                    <GridViewRowPresenter Columns="{TemplateBinding GridView.ColumnCollection}"
+                                                          Content="{TemplateBinding Content}"
+                                                          HorizontalAlignment="Stretch" />
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.SurfaceHover}" />
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.Selection}" />
+                                    <Setter TargetName="AccentBar" Property="Background" Value="{DynamicResource App.SelectionBorder}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource App.FocusRing}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="GridViewColumnHeader">
+                <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextSecondary}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="Padding" Value="10,8" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="GridViewColumnHeader">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="Center" RecognizesAccessKey="True" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ── ListBox (kurulu oyunlar ekranı) ─────────────────────────────── -->
+            <Style TargetType="ListBox">
+                <Setter Property="Background" Value="{DynamicResource App.Surface}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+            </Style>
+
+            <Style TargetType="ListBoxItem">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="Padding" Value="10,7" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                            <Border x:Name="Root" Background="{TemplateBinding Background}"
+                                    BorderBrush="Transparent" BorderThickness="0,0,0,1"
+                                    Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.SurfaceHover}" />
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.Selection}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource App.FocusRing}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ── Kaydırma çubukları: varsayılan (açık) sistem çubuğu yerine tema renkleri ── -->
+            <Style x:Key="App.ScrollThumb" TargetType="Thumb">
+                <Setter Property="OverridesDefaultStyle" Value="True" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Thumb">
+                            <Border x:Name="Bar" Background="{DynamicResource App.BorderStrong}"
+                                    CornerRadius="4" Margin="2" />
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bar" Property="Background" Value="{DynamicResource App.TextMuted}" />
+                                </Trigger>
+                                <Trigger Property="IsDragging" Value="True">
+                                    <Setter TargetName="Bar" Property="Background" Value="{DynamicResource App.TextSecondary}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="ScrollBar">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Width" Value="12" />
+                <Setter Property="MinWidth" Value="12" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Grid Background="{TemplateBinding Background}">
+                                <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}"
+                                       IsDirectionReversed="True">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0"
+                                                      Focusable="False" IsTabStop="False" />
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource App.ScrollThumb}" />
+                                    </Track.Thumb>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0"
+                                                      Focusable="False" IsTabStop="False" />
+                                    </Track.IncreaseRepeatButton>
+                                </Track>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="Orientation" Value="Horizontal">
+                                    <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                                    <Setter Property="Height" Value="12" />
+                                    <Setter Property="MinHeight" Value="12" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="Orientation" Value="Horizontal">
+                        <Setter Property="Width" Value="Auto" />
+                        <Setter Property="MinWidth" Value="0" />
+                        <Setter Property="MinHeight" Value="12" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- ── Diğer ortak kontroller ─────────────────────────────────────── -->
+            <Style TargetType="ProgressBar">
+                <Setter Property="Height" Value="5" />
+                <Setter Property="Foreground" Value="{DynamicResource App.AccentDefault}" />
+                <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+
+            <Style TargetType="GridSplitter">
+                <Setter Property="Background" Value="{DynamicResource App.Border}" />
+            </Style>
+
+            <Style TargetType="Expander">
+                <Setter Property="Foreground" Value="{DynamicResource App.TextSecondary}" />
+            </Style>
+
+            <Style TargetType="ToolTip">
+                <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+                <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+                <Setter Property="Padding" Value="8,5" />
+                <Setter Property="FontSize" Value="12" />
+            </Style>
+
+            <Style TargetType="ScrollViewer">
+                <Setter Property="Background" Value="Transparent" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
+
+
+
+

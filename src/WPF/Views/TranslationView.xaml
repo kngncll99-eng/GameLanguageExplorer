@@ -1,0 +1,352 @@
+<UserControl x:Class="GameLanguageExplorer.WPF.Views.TranslationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="820" d:DesignWidth="1200"
+             Background="{DynamicResource App.Background}">
+
+    <UserControl.Resources>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource App.Surface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14,12" />
+        </Style>
+
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,3" />
+            <Setter Property="Foreground" Value="{DynamicResource App.TextMuted}" />
+        </Style>
+
+        <Style x:Key="SmallText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource App.TextSecondary}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="{DynamicResource App.Surface}" />
+            <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="RowBackground" Value="{DynamicResource App.GridRow}" />
+            <Setter Property="AlternatingRowBackground" Value="{DynamicResource App.GridRowAlt}" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource App.Border}" />
+            <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource App.Border}" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="SelectionUnit" Value="FullRow" />
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+            <Setter Property="Foreground" Value="{DynamicResource App.TextSecondary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="Foreground" Value="{DynamicResource App.TextPrimary}" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="{DynamicResource App.Surface}"
+                BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1" Padding="20,14">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="AI ÇEVİRİ" FontSize="19" FontWeight="Bold"
+                               Foreground="{DynamicResource App.TextPrimary}" />
+                    <TextBlock Text="Keşfedilmiş dil dosyasını salt okunur önizleyin; yerel LM Studio ile partili çevirin."
+                               FontSize="12" Margin="0,3,0,0" TextWrapping="Wrap"
+                               Foreground="{DynamicResource App.TextSecondary}" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Oyunları Yenile" Command="{Binding ReloadCommand}"
+                        VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Style="{StaticResource Card}" Margin="16,12,16,0">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="KURULU OYUN" Style="{StaticResource FieldLabel}" />
+                        <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
+                                  MinWidth="300" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Game.Name}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding InstallPath}" FontSize="10"
+                                                   Foreground="{DynamicResource App.TextMuted}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="DİL DOSYASI (keşfedilmiş)" Style="{StaticResource FieldLabel}" />
+                        <ComboBox ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}"
+                                  MinWidth="300" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding FileName}" />
+                                        <TextBlock Text="{Binding SupportText}" FontSize="10"
+                                                   Foreground="{DynamicResource App.TextMuted}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <Button Grid.Column="3" Content="Önizle" Command="{Binding PreviewCommand}"
+                            VerticalAlignment="Bottom" Margin="12,0,0,2" />
+                </Grid>
+
+                <WrapPanel Margin="0,12,0,0">
+                    <StackPanel Width="140" Margin="0,0,10,0">
+                        <TextBlock Text="KAYNAK DİL" Style="{StaticResource FieldLabel}" />
+                        <ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding SourceLanguage}" />
+                    </StackPanel>
+                    <StackPanel Width="140" Margin="0,0,14,0">
+                        <TextBlock Text="HEDEF DİL" Style="{StaticResource FieldLabel}" />
+                        <ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding TargetLanguage}" />
+                    </StackPanel>
+                    <StackPanel Width="250" Margin="0,0,10,0">
+                        <TextBlock Text="LM STUDIO UÇ NOKTASI" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Width="240" Margin="0,0,10,0">
+                        <TextBlock Text="MODEL" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding Model, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <Button Content="Bağlantıyı Sına" Command="{Binding TestConnectionCommand}"
+                            VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+
+        <Border Grid.Row="2" Style="{StaticResource Card}" Margin="16,10,16,0">
+            <StackPanel>
+                <WrapPanel>
+                    <StackPanel Width="110" Margin="0,0,10,0">
+                        <TextBlock Text="PARTİ KAYIT" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding MaxUnitsPerBatch, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Width="145" Margin="0,0,10,0">
+                        <TextBlock Text="PARTİ KARAKTER" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding MaxSourceCharactersPerBatch, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Width="120" Margin="0,0,10,0">
+                        <TextBlock Text="ZAMAN AŞIMI (s)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding RequestTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Width="110" Margin="0,0,14,0">
+                        <TextBlock Text="MAKS. TOKEN" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding MaxOutputTokens, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <Button Content="Çeviriyi Başlat / Devam Et" Command="{Binding StartCommand}"
+                            VerticalAlignment="Bottom" Margin="0,0,8,2" />
+                    <Button Content="İptal" Command="{Binding CancelCommand}"
+                            VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                </WrapPanel>
+
+                <TextBlock Text="{Binding ConnectionMessage}" Style="{StaticResource SmallText}"
+                           Margin="0,9,0,0" Foreground="{DynamicResource App.Info}"
+                           Visibility="{Binding ConnectionMessage, Converter={StaticResource StringToVisibilityConverter}}" />
+                <TextBlock Text="{Binding ErrorMessage}" Style="{StaticResource SmallText}"
+                           Margin="0,7,0,0" Foreground="{DynamicResource App.Error}"
+                           Visibility="{Binding ErrorMessage, Converter={StaticResource StringToVisibilityConverter}}" />
+                <TextBlock Text="{Binding WarningMessage}" Style="{StaticResource SmallText}"
+                           Margin="0,7,0,0" Foreground="{DynamicResource App.Warning}"
+                           Visibility="{Binding WarningMessage, Converter={StaticResource StringToVisibilityConverter}}" />
+                <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource SmallText}"
+                           Margin="0,7,0,0" FontWeight="SemiBold"
+                           Foreground="{DynamicResource App.TextPrimary}"
+                           Visibility="{Binding StatusMessage, Converter={StaticResource StringToVisibilityConverter}}" />
+            </StackPanel>
+        </Border>
+
+
+        <Border Grid.Row="3" Style="{StaticResource Card}" Margin="16,10,16,0" Padding="12,9">
+            <StackPanel>
+                <WrapPanel>
+                    <StackPanel Width="135" Margin="0,0,12,0">
+                        <TextBlock Text="ÖNİZLEME" Style="{StaticResource FieldLabel}" />
+                        <TextBlock FontSize="12" Foreground="{DynamicResource App.TextPrimary}">
+                            <Run Text="{Binding PreviewTranslatableCount}" />
+                            <Run Text=" çevrilebilir · " />
+                            <Run Text="{Binding PreviewAmbiguousCount}" />
+                            <Run Text=" belirsiz · " />
+                            <Run Text="{Binding PreviewSkippedCount}" />
+                            <Run Text=" atlandı" />
+                        </TextBlock>
+                    </StackPanel>
+                    <StackPanel Width="150" Margin="0,0,12,0">
+                        <TextBlock Text="İLERLEME" Style="{StaticResource FieldLabel}" />
+                        <TextBlock FontSize="12" Foreground="{DynamicResource App.TextPrimary}">
+                            <Run Text="{Binding CompletedCount}" />
+                            <Run Text=" / " />
+                            <Run Text="{Binding TotalCount}" />
+                            <Run Text=" parti " />
+                            <Run Text="{Binding BatchIndex}" />
+                            <Run Text="/" />
+                            <Run Text="{Binding BatchCount}" />
+                        </TextBlock>
+                    </StackPanel>
+                    <StackPanel Width="95" Margin="0,0,12,0">
+                        <TextBlock Text="SÜRE" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="{Binding ElapsedText}" FontSize="12"
+                                   Foreground="{DynamicResource App.TextPrimary}" />
+                    </StackPanel>
+                    <CheckBox Content="Yalnızca inceleme/başarısız" IsChecked="{Binding ShowOnlyAttention}"
+                              VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                </WrapPanel>
+                <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" Margin="0,9,0,0" />
+                <TextBlock Text="{Binding PreviewPath}" Style="{StaticResource SmallText}"
+                           Margin="0,6,0,0" ToolTip="{Binding PreviewPath}" />
+                <TextBlock Text="{Binding MetricsText}" Style="{StaticResource SmallText}"
+                           Margin="0,6,0,0" Visibility="{Binding MetricsText, Converter={StaticResource StringToVisibilityConverter}}" />
+                <TextBlock Text="{Binding JournalPath}" Style="{StaticResource SmallText}"
+                           Margin="0,4,0,0" Foreground="{DynamicResource App.TextMuted}"
+                           Visibility="{Binding JournalPath, Converter={StaticResource StringToVisibilityConverter}}" />
+                <TextBlock Text="Not: Otomatik kontroller yer tutucu ve yapıyı doğrular; anlam doğruluğunu garanti etmez. Aday kayıtları yine de gözden geçirin."
+                           Style="{StaticResource SmallText}" Margin="0,6,0,0"
+                           Foreground="{DynamicResource App.Warning}" />
+            </StackPanel>
+        </Border>
+
+
+        <Grid Grid.Row="4" Margin="16,10,16,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2.2*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="1*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Style="{StaticResource Card}" Padding="0">
+                <DataGrid ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedResult}">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="DURUM" Width="105">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="4"
+                                            Padding="6,2" HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusBrush}"
+                                                   FontWeight="SemiBold" FontSize="11" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="ANAHTAR" Binding="{Binding EntryKey}" Width="160" />
+                        <DataGridTemplateColumn Header="KAYNAK METİN" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding SourceText}" TextWrapping="Wrap" MaxHeight="90" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="ÇEVİRİ" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding TranslationText}" TextWrapping="Wrap" MaxHeight="90" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="NEDEN" Binding="{Binding DecisionReason}" Width="180" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                        <TextBlock Text="SEÇİLİ KAYIT" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="{Binding SelectedResult.StatusText}" FontWeight="Bold" FontSize="14"
+                                   Foreground="{Binding SelectedResult.StatusBrush}" />
+                        <TextBlock Text="{Binding SelectedResult.EntryKey}" Style="{StaticResource SmallText}"
+                                   Margin="0,3,0,0" />
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+
+                            <TextBlock Text="KAYNAK" Style="{StaticResource FieldLabel}" />
+                            <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="4" Padding="8">
+                                <TextBlock Text="{Binding SelectedResult.SourceText}" TextWrapping="Wrap" FontSize="12" />
+                            </Border>
+
+                            <TextBlock Text="ÇEVİRİ" Style="{StaticResource FieldLabel}" Margin="0,10,0,3" />
+                            <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="4" Padding="8">
+                                <TextBlock Text="{Binding SelectedResult.TranslationText}" TextWrapping="Wrap" FontSize="12" />
+                            </Border>
+
+                            <TextBlock Text="KARAR / NEDEN" Style="{StaticResource FieldLabel}" Margin="0,10,0,3" />
+                            <TextBlock Text="{Binding SelectedResult.DecisionReason}" Style="{StaticResource SmallText}" />
+
+                            <TextBlock Text="KALİTE BULGULARI" Style="{StaticResource FieldLabel}" Margin="0,10,0,3" />
+                            <TextBlock Text="{Binding SelectedResult.QualityText}" Style="{StaticResource SmallText}" />
+
+                            <TextBlock Text="YER TUTUCULAR" Style="{StaticResource FieldLabel}" Margin="0,10,0,3" />
+                            <TextBlock Text="{Binding SelectedResult.PlaceholderText}" Style="{StaticResource SmallText}" />
+
+                            <TextBlock Text="DENEME / BİRİM" Style="{StaticResource FieldLabel}" Margin="0,10,0,3" />
+                            <TextBlock Style="{StaticResource SmallText}">
+                                <Run Text="{Binding SelectedResult.AttemptsText}" />
+                                <Run Text=" deneme · " />
+                                <Run Text="{Binding SelectedResult.UnitId}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <TextBlock Grid.Row="2" Text="Ayrıntı için tablodan bir satır seçin."
+                               Style="{StaticResource SmallText}" Margin="0,8,0,0"
+                               Visibility="{Binding HasSelectedResult, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
+

@@ -1,0 +1,224 @@
+<UserControl x:Class="GameLanguageExplorer.WPF.Views.InstalledGamesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="760" d:DesignWidth="1200">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 1) Araç çubuğu -->
+        <Border Grid.Row="0" Background="{DynamicResource App.Surface}" Padding="16,12" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="KURULU OYUNLAR" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource App.AccentDefault}"
+                               Margin="0,0,16,0" VerticalAlignment="Center" />
+                    <Border BorderBrush="{DynamicResource App.Border}" BorderThickness="1" Padding="8,4" Margin="8,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding GameCount, StringFormat='{}{0} oyun'}" Foreground="{DynamicResource App.TextSecondary}" />
+                    </Border>
+                    <TextBlock Text="salt okunur" FontSize="11" Foreground="{DynamicResource App.TextSecondary}"
+                               VerticalAlignment="Center" Margin="8,0,16,0" />
+                    <TextBlock Text="{Binding LastScanText}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <WrapPanel Grid.Column="1" Orientation="Horizontal">
+                    <TextBlock Text="Kaynak:" Foreground="{DynamicResource App.TextSecondary}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <Button Width="130" HorizontalContentAlignment="Left" Padding="9,6" Margin="0,0,8,0"
+                            Command="{Binding ToggleSourceFilterCommand}"
+                            ToolTip="Kurulum kaynağına göre filtrele">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding SelectedSourceFilter}" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource App.TextPrimary}" />
+                            <Path Data="M 0 0 L 4.5 4.5 L 9 0" StrokeThickness="1.6"
+                                  Stroke="{DynamicResource App.TextSecondary}"
+                                  VerticalAlignment="Center" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </Button>
+                    <Button Content="Tüm Kaynakları Tara" Command="{Binding ScanCommand}" Padding="14,6"
+                            ToolTip="Desteklenen tüm kaynaklar salt okunur taranır." />
+                    <Button Content="Yenile" Command="{Binding RefreshCommand}" Padding="12,6" />
+                    <Button Content="İptal" Command="{Binding CancelCommand}" Padding="12,6" />
+                </WrapPanel>
+
+                <!-- Kaynak filtresi listesi (popup yerine satır içi; iki temada da okunur) -->
+                <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,0" Width="240"
+                        HorizontalAlignment="Right"
+                        Background="{DynamicResource App.Surface}"
+                        BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="6"
+                        Visibility="{Binding IsSourceFilterOpen, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <ListBox ItemsSource="{Binding SourceFilters}" SelectedItem="{Binding SelectedSourceFilter}"
+                             BorderThickness="0" Background="Transparent" MaxHeight="180" Padding="4">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" Foreground="{DynamicResource App.TextPrimary}" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 2) Bildirim şeridi -->
+        <StackPanel Grid.Row="1">
+            <Border Background="{DynamicResource App.Background}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1" Padding="16,8"
+                    Visibility="{Binding IsStatusVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel>
+                    <ProgressBar Height="4" IsIndeterminate="True" Margin="0,0,0,6"
+                                 Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource App.TextSecondary}" FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Background="{DynamicResource App.ErrorSoft}" BorderBrush="{DynamicResource App.Error}" BorderThickness="0,0,0,1" Padding="16,8"
+                    Visibility="{Binding ErrorMessage, Converter={StaticResource StringToVisibilityConverter}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="⚠ " Foreground="{DynamicResource App.Error}" FontWeight="Bold" Margin="0,0,8,0" />
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource App.Error}" TextWrapping="Wrap" MaxWidth="900" />
+                </StackPanel>
+            </Border>
+
+            <Border Background="{DynamicResource App.WarningSoft}" BorderBrush="{DynamicResource App.Warning}" BorderThickness="0,0,0,1" Padding="16,8"
+                    Visibility="{Binding WarningMessage, Converter={StaticResource StringToVisibilityConverter}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="⚠ " Foreground="{DynamicResource App.Warning}" FontWeight="Bold" Margin="0,0,8,0" />
+                    <TextBlock Text="{Binding WarningMessage}" Foreground="{DynamicResource App.Warning}" TextWrapping="Wrap" MaxWidth="900" />
+                </StackPanel>
+            </Border>
+
+            <Border Background="{DynamicResource App.SuccessSoft}" BorderBrush="{DynamicResource App.Success}" BorderThickness="0,0,0,1" Padding="16,8"
+                    Visibility="{Binding ScanFound, Converter={StaticResource IntToVisibilityConverter}}">
+                <WrapPanel Orientation="Horizontal">
+                    <TextBlock Text="Bulunan: " Foreground="{DynamicResource App.Warning}" FontWeight="Bold" />
+                    <TextBlock Text="{Binding ScanFound}" Foreground="{DynamicResource App.TextPrimary}" Margin="0,0,16,0" />
+                    <TextBlock Text="Eklenen: " Foreground="{DynamicResource App.Success}" FontWeight="Bold" />
+                    <TextBlock Text="{Binding ScanAdded}" Foreground="{DynamicResource App.TextPrimary}" Margin="0,0,16,0" />
+                    <TextBlock Text="Güncellenen: " Foreground="{DynamicResource App.Info}" FontWeight="Bold" />
+                    <TextBlock Text="{Binding ScanUpdated}" Foreground="{DynamicResource App.TextPrimary}" />
+                </WrapPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- 3) Manuel oyun klasörü ekleme -->
+        <Border Grid.Row="2" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1" Padding="16,10">
+            <StackPanel>
+                <WrapPanel Orientation="Horizontal">
+                    <TextBlock Text="Oyun Klasörü Ekle" FontWeight="Bold" Foreground="{DynamicResource App.TextSecondary}"
+                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <TextBox Width="340" Margin="0,0,8,0" VerticalAlignment="Center"
+                             Text="{Binding ManualFolderPath, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Oyunun kurulu olduğu klasör (salt okunur taranır)" />
+                    <Button Content="Klasör Seç" Command="{Binding PickFolderCommand}" Padding="12,6" />
+                    <TextBlock Text="Oyun adı:" Foreground="{DynamicResource App.TextSecondary}" VerticalAlignment="Center" Margin="12,0,6,0" />
+                    <TextBox Width="200" Margin="0,0,8,0" VerticalAlignment="Center"
+                             Text="{Binding ManualGameName, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Boş bırakılırsa klasör adı kullanılır (ad doğrulanmamış sayılır)" />
+                    <Button Content="Klasörü Ekle" Command="{Binding AddManualFolderCommand}" Padding="12,6" />
+                </WrapPanel>
+
+                <TextBlock Text="{Binding ManualStatusMessage}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}"
+                           TextWrapping="Wrap" Margin="0,6,0,0"
+                           Visibility="{Binding ManualStatusMessage, Converter={StaticResource StringToVisibilityConverter}}" />
+
+                <Expander Header="Kaynaklar ve destek durumu" Foreground="{DynamicResource App.TextSecondary}" FontSize="11" Margin="0,8,0,0">
+                    <ItemsControl ItemsSource="{Binding Sources}" Margin="4,4,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <WrapPanel Margin="0,1">
+                                    <TextBlock Text="{Binding SupportText}" Width="110" Foreground="{DynamicResource App.TextSecondary}" />
+                                    <TextBlock Text="{Binding DisplayName}" Width="160" Foreground="{DynamicResource App.TextSecondary}" />
+                                    <TextBlock Text="{Binding Notes}" Foreground="{DynamicResource App.TextMuted}" FontSize="10" />
+                                </WrapPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+            </StackPanel>
+        </Border>
+
+        <!-- 4) İçerik -->
+        <Grid Grid.Row="3">
+            <ListBox ItemsSource="{Binding Games}" Margin="16"
+                     Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="Transparent" Padding="10" Margin="2">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <WrapPanel>
+                                        <TextBlock Text="{Binding Game.Name, FallbackValue='(isimsiz)'}"
+                                                   FontWeight="Bold" FontSize="14" Foreground="{DynamicResource App.TextPrimary}" TextWrapping="Wrap" />
+                                        <TextBlock Text="ad doğrulanmadı" FontSize="10" Foreground="{DynamicResource App.Warning}" Margin="8,3,0,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding InstallSource}" Value="Manual">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </WrapPanel>
+                                    <TextBlock Text="{Binding InstallPath}" FontSize="11" Foreground="{DynamicResource App.TextSecondary}"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                                    <Border Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                                            Padding="8,3" CornerRadius="3">
+                                        <TextBlock Text="{Binding InstallSource, TargetNullValue='bilinmiyor'}"
+                                                   FontSize="11" Foreground="{DynamicResource App.Success}" />
+                                    </Border>
+                                    <TextBlock Text="{Binding InstallSourceId}" FontSize="11" Foreground="{DynamicResource App.TextMuted}"
+                                               VerticalAlignment="Center" Margin="8,0,0,0" />
+                                    <TextBlock Text="kurulu değil" FontSize="10" Foreground="{DynamicResource App.Error}"
+                                               VerticalAlignment="Center" Margin="8,0,0,0"
+                                               Visibility="{Binding IsInstalled, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- Boş durum -->
+            <Border Margin="16" Background="{DynamicResource App.Background}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                    Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560">
+                    <TextBlock Text="🎮" FontSize="40" HorizontalAlignment="Center" Foreground="{DynamicResource App.BorderStrong}" />
+                    <TextBlock Text="Kurulu oyun bulunamadı" FontSize="18" FontWeight="Bold"
+                               HorizontalAlignment="Center" Margin="0,12,0,8" Foreground="{DynamicResource App.TextSecondary}" />
+                    <TextBlock Text="{Binding EmptyMessage}" FontSize="13" Foreground="{DynamicResource App.TextSecondary}"
+                               TextWrapping="Wrap" TextAlignment="Center" />
+                    <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0">
+                        <Button Content="Tüm Kaynakları Tara" Command="{Binding ScanCommand}" Padding="16,8" />
+                        <Button Content="Klasör Seç" Command="{Binding PickFolderCommand}" Padding="16,8" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
+
+

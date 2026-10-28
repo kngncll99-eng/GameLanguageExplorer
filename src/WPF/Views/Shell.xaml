@@ -1,0 +1,128 @@
+<Window x:Class="GameLanguageExplorer.WPF.Views.Shell"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Game Language Explorer"
+        Height="820" Width="1360" MinHeight="620" MinWidth="1000"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource App.Background}"
+        Foreground="{DynamicResource App.TextPrimary}">
+
+    <Window.Resources>
+        <!-- Sidebar gezinme düğmesi: sol hizalı, sakin görünüm, odak halkası korunur -->
+        <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="Normal" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="248" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ── Kenar çubuğu ─────────────────────────────────────────────────── -->
+        <Border Grid.Column="0" Background="{DynamicResource App.Surface}"
+                BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,1,0">
+            <Grid Margin="16,18,16,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="4" Height="34" CornerRadius="2" Margin="0,2,10,0"
+                                Background="{DynamicResource App.AccentDefault}" />
+                        <StackPanel>
+                            <TextBlock Text="GAME LANGUAGE" FontSize="17" FontWeight="Bold"
+                                       Foreground="{DynamicResource App.TextPrimary}" />
+                            <TextBlock Text="Explorer" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource App.TextSecondary}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Border Height="1" Margin="0,16,0,14" Background="{DynamicResource App.Border}" />
+                </StackPanel>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Text="GEZİNME" FontSize="11" FontWeight="Bold" Margin="12,0,0,6"
+                                   Foreground="{DynamicResource App.TextMuted}" />
+
+                        <Button Style="{StaticResource NavButton}" Content="Global Oyun Kataloğu"
+                                Command="{Binding NavigateToCatalogCommand}" />
+                        <Button Style="{StaticResource NavButton}" Content="Kurulu Oyunlar"
+                                Command="{Binding NavigateToInstalledCommand}" />
+                        <Button Style="{StaticResource NavButton}" Content="Dil Dosyası Keşfi"
+                                Command="{Binding NavigateToFileDiscoveryCommand}" />
+                        <Button Style="{StaticResource NavButton}" Content="AI Çeviri"
+                                Command="{Binding NavigateToTranslationCommand}" />
+
+                        <Border Height="1" Margin="4,12,4,10" Background="{DynamicResource App.Border}" />
+                        <TextBlock Text="YAKINDA" FontSize="11" FontWeight="Bold" Margin="12,0,0,6"
+                                   Foreground="{DynamicResource App.TextMuted}" />
+
+                        <Button Style="{StaticResource NavButton}" Content="Dosya Formatları"
+                                Command="{Binding NavigateToFormatsCommand}" IsEnabled="False" />
+                        <Button Style="{StaticResource NavButton}" Content="Yerelleştirme Editörü"
+                                Command="{Binding NavigateToEditorCommand}" IsEnabled="False" />
+                        <Button Style="{StaticResource NavButton}" Content="Yedekleme ve Dışa Aktarım"
+                                Command="{Binding NavigateToBackupCommand}" IsEnabled="False" />
+                        <Button Style="{StaticResource NavButton}" Content="Ayarlar"
+                                Command="{Binding NavigateToSettingsCommand}" IsEnabled="False" />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <StackPanel Grid.Row="2">
+                    <Border Height="1" Margin="0,12,0,12" Background="{DynamicResource App.Border}" />
+
+                    <TextBlock Text="{Binding ThemeStateText}" FontSize="12" Margin="4,0,0,6"
+                               Foreground="{DynamicResource App.TextSecondary}" />
+                    <Button Content="{Binding ThemeToggleText}" Command="{Binding ToggleThemeCommand}"
+                            HorizontalContentAlignment="Center" Margin="0,0,0,10"
+                            ToolTip="Koyu ve açık tema arasında geçiş yapar" />
+
+                    <StackPanel Orientation="Horizontal" Margin="4,2,0,0">
+                        <Ellipse Width="8" Height="8" Margin="0,0,7,0" VerticalAlignment="Center"
+                                 Fill="{DynamicResource App.Success}" />
+                        <TextBlock Text="Veritabanı bağlı" FontSize="12"
+                                   Foreground="{DynamicResource App.TextSecondary}" />
+                    </StackPanel>
+                    <TextBlock Text="Salt okunur mod" FontSize="12" Margin="15,3,0,0"
+                               Foreground="{DynamicResource App.TextMuted}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ── İçerik ───────────────────────────────────────────────────────── -->
+        <Grid Grid.Column="1" Background="{DynamicResource App.Background}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Padding="22,14" Background="{DynamicResource App.Surface}"
+                    BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1">
+                <Grid>
+                    <TextBlock Text="{Binding CurrentSectionTitle}" FontSize="18" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Foreground="{DynamicResource App.TextPrimary}" />
+                    <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"
+                               Text="Yalnızca okuma · oyun dosyaları değiştirilmez"
+                               Foreground="{DynamicResource App.TextMuted}" />
+                </Grid>
+            </Border>
+
+            <ContentControl Grid.Row="1" Content="{Binding CurrentViewModel}" />
+        </Grid>
+    </Grid>
+</Window>
+
