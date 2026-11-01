@@ -64,6 +64,22 @@ Aranan ipuçları: `localization`, `localisation`, `localized`, `localised`, `la
 `locale(s)`, `translation(s)`, `stringtable(s)`, `text`, `texts`, `string`, `strings`,
 `i18n`, `l10n`. `text`/`string` yalnızca **tam** eşleşir (`Texture`, `Context` yanlış pozitif vermez).
 
+### JSON içerik kontrolü
+
+JSON adaylarında uzantı ve dosya/klasör ipuçlarına ek olarak dosyanın başındaki sınırlı
+içerik **salt okunur** incelenir (varsayılan üst sınır 256 KB). Bu inceleme `FormatEvidence`
+tarafında `Content` türüyle raporlanır ve yalnızca güven düzeyini ayarlar; dosya hiçbir zaman
+değiştirilmez veya yeniden serileştirilmez.
+
+- Geçerli JSON ve yeterli sayıda çevrilebilir metin değeri → güven bir seviye yükselir
+  (ör. `Low` → `Medium`); yol ipuçları zaten yüksekse `High` korunur.
+- Sayı/boolean/null ağırlıklı veya çevrilebilir metin içermeyen JSON → güven `Low`.
+- Geçersiz, boş veya okunamayan JSON → güven `Low`; tarama durmaz, dosya aday olarak kalır.
+- Belirsiz içerik (tek tük metin, teknik dizeler) → güven en fazla `Medium`.
+- 256 KB üstündeki JSON → içerik okunmaz, güven en fazla `Medium`; yalnızca yol/uzantı
+  sinyalleri kullanılır.
+- Yol, URL, GUID ve teknik anahtar benzeri dizeler çevrilebilir metin sayılmaz.
+
 ## Ayrıştırma kuralları
 
 | Konu | Davranış |

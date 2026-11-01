@@ -255,11 +255,154 @@ public class LocalizationFileClassifierTests
         Assert.Contains(result.Evidence, e => e.EvidenceType == LocalizationEvidenceTypes.FileName);
         Assert.Contains(result.Evidence, e => e.EvidenceType == LocalizationEvidenceTypes.FolderName);
     }
+
+    [Fact]
+    public void JsonContentSignal_RaisesLowConfidenceToMedium()
+    {
+        var content = JsonContentInspector.Inspect(
+            """{"menu":{"play":"Oyna","settings":"Ayarlar","quit":"Çıkış"}}""");
+
+        var result = LocalizationFileClassifier.Classify(
+            @"C:\Game\data\ui.json",
+            jsonContent: content);
+
+        Assert.NotNull(result);
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceMedium, result!.Confidence);
+        Assert.True(result.HasContentSignal);
+        Assert.Contains(result.Evidence, e => e.EvidenceType == LocalizationEvidenceTypes.Content);
+    }
+
+    [Fact]
+    public void JsonContentWithoutText_CapsHighConfidence()
+    {
+        var content = JsonContentInspector.Inspect("""{"width":1920,"height":1080}""");
+
+        var result = LocalizationFileClassifier.Classify(
+            @"C:\Game\Localization\languages\menu_text.json",
+            @"Localization\languages",
+            content);
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceLow, result!.Confidence);
+        Assert.Contains("çevrilebilir metin", result.Reason);
+    }
+
+    [Fact]
+    public void InvalidJsonContent_CapsHighConfidence()
+    {
+        var content = JsonContentInspector.Inspect("""{"menu":""");
+
+        var result = LocalizationFileClassifier.Classify(
+            @"C:\Game\Localization\languages\menu_text.json",
+            @"Localization\languages",
+            content);
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceLow, result!.Confidence);
+        Assert.Contains("Geçersiz JSON", result.Reason);
+    }
+
+    [Fact]
+    public void AmbiguousJsonContent_CapsHighAtMedium()
+    {
+        var content = JsonContentInspector.Inspect("""{"name":"My Game","version":"1.0.0"}""");
+
+        var result = LocalizationFileClassifier.Classify(
+            @"C:\Game\Localization\languages\menu_text.json",
+            @"Localization\languages",
+            content);
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceMedium, result!.Confidence);
+        Assert.Contains("belirsiz", result.Reason);
+    }
+
+    [Fact]
+    public void OversizedJsonContent_CapsHighAtMedium()
+    {
+        var content = new JsonContentAnalysis(
+            JsonContentStatus.Oversized,
+            Detail: "boyut sınırı nedeniyle incelenmedi");
+
+        var result = LocalizationFileClassifier.Classify(
+            @"C:\Game\Localization\languages\menu_text.json",
+            @"Localization\languages",
+            content);
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceMedium, result!.Confidence);
+        Assert.Contains("boyut sınırı", result.Reason);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Yol güvenliği
 // ─────────────────────────────────────────────────────────────────────────────
+
+public class JsonContentInspectorTests
+{
+    [Fact]
+    public void LocalizationLikeJson_IsDetected()
+    {
+        var result = JsonContentInspector.Inspect(
+            """{"menu":{"play":"Oyna","settings":"Ayarlar","quit":"Çıkış"}}""");
+
+        Assert.Equal(JsonContentStatus.LocalizationLike, result.Status);
+        Assert.Equal(3, result.TextValueCount);
+        Assert.True(result.HasLocalizationSignal);
+    }
+
+    [Fact]
+    public void GameConfigJson_WithoutText_IsNotLocalizationLike()
+    {
+        var result = JsonContentInspector.Inspect(
+            """{"width":1920,"height":1080,"fullscreen":true,"vsync":false}""");
+
+        Assert.Equal(JsonContentStatus.NoText, result.Status);
+        Assert.False(result.HasLocalizationSignal);
+    }
+
+    [Fact]
+    public void MetadataStrings_AreAmbiguous()
+    {
+        var result = JsonContentInspector.Inspect(
+            """{"name":"My Game","version":"1.0.0"}""");
+
+        Assert.Equal(JsonContentStatus.Ambiguous, result.Status);
+        Assert.False(result.HasLocalizationSignal);
+    }
+
+    [Fact]
+    public void FlatTextObject_IsLocalizationLike()
+    {
+        var result = JsonContentInspector.Inspect(
+            """{"hello":"Hello","world":"World"}""");
+
+        Assert.Equal(JsonContentStatus.LocalizationLike, result.Status);
+        Assert.True(result.HasLocalizationSignal);
+    }
+
+    [Fact]
+    public void InvalidJson_IsReportedAsInvalid()
+    {
+        var result = JsonContentInspector.Inspect("""{"menu":""");
+
+        Assert.Equal(JsonContentStatus.Invalid, result.Status);
+        Assert.Contains("Geçersiz JSON", result.Detail);
+    }
+
+    [Fact]
+    public void OversizedJson_IsNotParsed()
+    {
+        var result = JsonContentInspector.Inspect("""{"menu":"Oyna"}""", maxBytes: 4);
+
+        Assert.Equal(JsonContentStatus.Oversized, result.Status);
+    }
+
+    [Fact]
+    public void EmptyJson_IsReportedAsEmpty()
+    {
+        var result = JsonContentInspector.Inspect("   ");
+
+        Assert.Equal(JsonContentStatus.Empty, result.Status);
+    }
+}
 
 public class PathSafetyTests
 {
@@ -336,8 +479,10 @@ public class LocalizationFileScanServiceTests
         using var database = new TempDatabase();
         using var tree = new TempTree();
 
-        tree.Write(@"Localization\ui_text.json");
-        tree.Write(@"Data\settings.json");
+        tree.Write(@"Localization\ui_text.json",
+            """{"menu":{"play":"Oyna","settings":"Ayarlar","quit":"Çıkış"}}""");
+        tree.Write(@"Data\settings.json",
+            """{"width":1920,"height":1080,"fullscreen":true}""");
 
         var installId = await DiscoveryTestHelper.CreateInstallAsync(database, tree.Root);
         await DiscoveryTestHelper.CreateService(database).ScanAsync(installId);
@@ -354,6 +499,116 @@ public class LocalizationFileScanServiceTests
 
         // Hiçbir kayıt "okunabilir" olarak sunulmaz.
         Assert.All(files, f => Assert.Null(f.AdapterUsed));
+    }
+
+    [Fact]
+    public async Task ScanAsync_JsonContentSignal_AddsContentEvidence()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+
+        tree.Write(@"Data\ui.json",
+            """{"menu":{"play":"Oyna","settings":"Ayarlar","quit":"Çıkış"}}""");
+
+        var installId = await DiscoveryTestHelper.CreateInstallAsync(database, tree.Root);
+        var result = await DiscoveryTestHelper.CreateService(database).ScanAsync(installId);
+
+        Assert.True(result.Success);
+
+        var file = Assert.Single(
+            await DiscoveryTestHelper.CreateService(database).GetDiscoveredFilesAsync(installId));
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceMedium, file.DetectionConfidence);
+
+        using var context = database.CreateContext();
+        Assert.Contains(context.FormatEvidences, e =>
+            e.DiscoveredFileId == file.Id && e.EvidenceType == LocalizationEvidenceTypes.Content);
+    }
+
+    [Fact]
+    public async Task ScanAsync_CorruptJson_StoresLowConfidenceWithoutThrowing()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+
+        var path = tree.Write(@"Localization\broken_text.json", """{"menu":""");
+
+        var installId = await DiscoveryTestHelper.CreateInstallAsync(database, tree.Root);
+        var result = await DiscoveryTestHelper.CreateService(database).ScanAsync(installId);
+
+        Assert.True(result.Success);
+
+        var file = Assert.Single(
+            await DiscoveryTestHelper.CreateService(database).GetDiscoveredFilesAsync(installId));
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceLow, file.DetectionConfidence);
+        Assert.Contains("Geçersiz JSON", file.LastValidationResult);
+        Assert.True(System.IO.File.Exists(path));
+    }
+
+    [Fact]
+    public async Task ScanAsync_OversizedJson_IsNotParsedAndCappedAtMedium()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+
+        tree.Write(@"Localization\huge_text.json", new string('x', 64));
+
+        var installId = await DiscoveryTestHelper.CreateInstallAsync(database, tree.Root);
+        var result = await DiscoveryTestHelper.CreateService(database).ScanAsync(
+            installId,
+            progress: null,
+            options: new LocalizationScanOptions { MaxJsonContentBytes = 32 });
+
+        Assert.True(result.Success);
+
+        var file = Assert.Single(
+            await DiscoveryTestHelper.CreateService(database).GetDiscoveredFilesAsync(installId));
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceMedium, file.DetectionConfidence);
+        Assert.Contains("sınır", file.LastValidationResult);
+    }
+
+    [Fact]
+    public async Task ScanAsync_GenericJsonConfig_IsNotPromotedByPathHint()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+
+        tree.Write(@"Localization\ui_text.json",
+            """{"width":1920,"height":1080,"fullscreen":true}""");
+
+        var installId = await DiscoveryTestHelper.CreateInstallAsync(database, tree.Root);
+        var result = await DiscoveryTestHelper.CreateService(database).ScanAsync(installId);
+
+        Assert.True(result.Success);
+
+        var file = Assert.Single(
+            await DiscoveryTestHelper.CreateService(database).GetDiscoveredFilesAsync(installId));
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceLow, file.DetectionConfidence);
+        Assert.Contains("çevrilebilir metin", file.LastValidationResult);
+    }
+
+    [Fact]
+    public async Task ScanAsync_AmbiguousJson_IsCappedAtMedium()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+
+        tree.Write(@"Localization\ui_text.json",
+            """{"name":"My Game","version":"1.0.0"}""");
+
+        var installId = await DiscoveryTestHelper.CreateInstallAsync(database, tree.Root);
+        var result = await DiscoveryTestHelper.CreateService(database).ScanAsync(installId);
+
+        Assert.True(result.Success);
+
+        var file = Assert.Single(
+            await DiscoveryTestHelper.CreateService(database).GetDiscoveredFilesAsync(installId));
+
+        Assert.Equal(LocalizationFormatCatalog.ConfidenceMedium, file.DetectionConfidence);
+        Assert.Contains("belirsiz", file.LastValidationResult);
     }
 
     [Fact]

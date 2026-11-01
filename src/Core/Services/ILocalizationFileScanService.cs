@@ -20,6 +20,12 @@ public sealed class LocalizationScanOptions
     /// <summary>SHA-256 hesaplanacak en büyük dosya boyutu (bayt). Daha büyükleri karma hesaplanmadan atlanır.</summary>
     public long MaxHashBytes { get; init; } = 64L * 1024 * 1024;
 
+    /// <summary>
+    /// JSON içerik incelemesi için en büyük dosya boyutu (bayt). Daha büyük JSON dosyaları
+    /// okunmaz; yalnızca yol/uzantı sinyalleriyle ve en fazla <c>Medium</c> güvenle raporlanır.
+    /// </summary>
+    public long MaxJsonContentBytes { get; init; } = JsonContentInspector.DefaultMaxBytes;
+
     /// <summary>İlerleme bildirimi sıklığı (görülen dosya sayısı).</summary>
     public int ProgressIntervalFiles { get; init; } = 200;
 

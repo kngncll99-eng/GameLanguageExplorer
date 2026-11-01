@@ -23,6 +23,12 @@ public sealed record LocalizationCandidateClassification(
         e.EvidenceType is LocalizationEvidenceTypes.FileName or LocalizationEvidenceTypes.FolderName);
 
     /// <summary>Gerçekten ayrıştırılabilir mi? (bu aşamada hiçbir format için "evet" değil)</summary>
+    /// <summary>JSON içerik incelemesi (yalnızca JSON adaylarında dolu olabilir).</summary>
+    public JsonContentAnalysis? JsonContent { get; init; }
+
+    /// <summary>İçerik güçlü bir yerelleştirme sinyali veriyor mu?</summary>
+    public bool HasContentSignal => JsonContent?.HasLocalizationSignal == true;
+
     public LocalizationSupportStatus SupportStatus
         => LocalizationFormatCatalog.GetSupportStatus(Format.Key, adapterUsed: null);
 }
@@ -33,6 +39,7 @@ public static class LocalizationEvidenceTypes
     public const string Extension = "Extension";
     public const string FileName = "FileName";
     public const string FolderName = "FolderName";
+    public const string Content = "Content";
 }
 
 /// <summary>
@@ -91,7 +98,10 @@ public static class LocalizationFileClassifier
     /// <summary>Dosyayı sınıflandırır; aday değilse <c>null</c>.</summary>
     /// <param name="filePath">Dosyanın tam yolu.</param>
     /// <param name="relativePath">Kök klasöre göre göreli klasör yolu (ör. <c>Localization\Text</c>).</param>
-    public static LocalizationCandidateClassification? Classify(string filePath, string? relativePath = null)
+    public static LocalizationCandidateClassification? Classify(
+        string filePath,
+        string? relativePath = null,
+        JsonContentAnalysis? jsonContent = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
         {
@@ -140,13 +150,107 @@ public static class LocalizationFileClassifier
                 ? LocalizationFormatCatalog.ConfidenceMedium
                 : LocalizationFormatCatalog.ConfidenceLow;
 
-        return new LocalizationCandidateClassification(
+        var result = new LocalizationCandidateClassification(
             format,
             extension,
             confidence,
             BuildReason(format, extension, nameMatches, folderMatches),
             evidence);
+
+        return string.Equals(format.Key, "JSON", StringComparison.OrdinalIgnoreCase) && jsonContent is not null
+            ? ApplyJsonContent(result, jsonContent)
+            : result;
     }
+
+    /// <summary>
+    /// JSON içerik sinyalini mevcut yol/uzantı güvenine uygular. İçerik güçlüyse güven
+    /// bir seviye yükselir; belirsiz/geçersiz/boş/okunamayan içerik güveni düşürür.
+    /// Çok büyük içerik hiç okunmadığı için en fazla <c>Medium</c> kalır.
+    /// </summary>
+    private static LocalizationCandidateClassification ApplyJsonContent(
+        LocalizationCandidateClassification classification,
+        JsonContentAnalysis content)
+    {
+        var evidence = classification.Evidence.ToList();
+        var confidence = classification.Confidence;
+        var reason = classification.Reason;
+
+        switch (content.Status)
+        {
+            case JsonContentStatus.LocalizationLike:
+                evidence.Add(new LocalizationEvidenceItem(
+                    LocalizationEvidenceTypes.Content,
+                    content.Summary,
+                    0.55,
+                    "json-text-values"));
+                confidence = RaiseConfidence(confidence);
+                reason += $" İçerik: {content.Detail}";
+                break;
+
+            case JsonContentStatus.Ambiguous:
+                evidence.Add(new LocalizationEvidenceItem(
+                    LocalizationEvidenceTypes.Content,
+                    content.Summary,
+                    0.2,
+                    "json-ambiguous"));
+                confidence = CapAtMedium(confidence);
+                reason += $" İçerik belirsiz: {content.Detail}";
+                break;
+
+            case JsonContentStatus.NoText:
+                evidence.Add(new LocalizationEvidenceItem(
+                    LocalizationEvidenceTypes.Content,
+                    content.Summary,
+                    0.05,
+                    "json-no-text"));
+                confidence = LocalizationFormatCatalog.ConfidenceLow;
+                reason += $" İçerik: {content.Detail}";
+                break;
+
+            case JsonContentStatus.Invalid:
+            case JsonContentStatus.Empty:
+            case JsonContentStatus.ReadError:
+                evidence.Add(new LocalizationEvidenceItem(
+                    LocalizationEvidenceTypes.Content,
+                    content.Summary,
+                    0.0,
+                    "json-invalid"));
+                confidence = LocalizationFormatCatalog.ConfidenceLow;
+                reason += $" İçerik doğrulanamadı: {content.Detail}";
+                break;
+
+            case JsonContentStatus.Oversized:
+            case JsonContentStatus.NotInspected:
+                evidence.Add(new LocalizationEvidenceItem(
+                    LocalizationEvidenceTypes.Content,
+                    content.Summary,
+                    0.0,
+                    "json-not-inspected"));
+                confidence = CapAtMedium(confidence);
+                reason += $" {content.Detail}";
+                break;
+        }
+
+        return classification with
+        {
+            Confidence = confidence,
+            Reason = reason,
+            Evidence = evidence,
+            JsonContent = content
+        };
+    }
+
+    private static string RaiseConfidence(string confidence)
+        => confidence switch
+        {
+            LocalizationFormatCatalog.ConfidenceLow => LocalizationFormatCatalog.ConfidenceMedium,
+            _ => LocalizationFormatCatalog.ConfidenceHigh
+        };
+
+    private static string CapAtMedium(string confidence)
+        => string.Equals(confidence, LocalizationFormatCatalog.ConfidenceHigh, StringComparison.Ordinal)
+            ? LocalizationFormatCatalog.ConfidenceMedium
+            : confidence;
 
     private static string BuildReason(
         LocalizationFormatInfo format,

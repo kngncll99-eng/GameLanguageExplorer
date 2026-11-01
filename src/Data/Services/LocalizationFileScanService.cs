@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using GameLanguageExplorer.Core.Entities;
 using GameLanguageExplorer.Core.Services;
 using GameLanguageExplorer.Core.Services.Localization;
+using GameLanguageExplorer.Core.Services.Localization.Preview;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -391,6 +392,14 @@ public sealed class LocalizationFileScanService : ILocalizationFileScanService
             }
         }
 
+        var contentAnalysis = TryInspectJsonContent(entry, classification, size, options);
+
+        if (contentAnalysis is not null)
+        {
+            classification = LocalizationFileClassifier.Classify(entry, relativeDirectory, contentAnalysis)
+                ?? classification;
+        }
+
         var isWritable = !attributes.HasFlag(FileAttributes.ReadOnly);
 
         collection.Hits.Add(new CandidateHit(
@@ -425,6 +434,51 @@ public sealed class LocalizationFileScanService : ILocalizationFileScanService
             AddWarning(collection, $"Dosya okunamadı, atlandı ('{path}'): {ex.Message}");
             return string.Empty;
         }
+    }
+
+    /// <summary>
+    /// JSON adayları için sınırlı ve salt okunur içerik incelemesi yapar. Diğer formatlarda
+    /// <c>null</c> döner. Boyut/erişim/kodlama sorunları istisna değil durum olarak döner.
+    /// </summary>
+    private static JsonContentAnalysis? TryInspectJsonContent(
+        string path,
+        LocalizationCandidateClassification classification,
+        long size,
+        LocalizationScanOptions options)
+    {
+        if (!string.Equals(classification.Format.Key, "JSON", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (options.MaxJsonContentBytes <= 0)
+        {
+            return null;
+        }
+
+        if (size <= 0)
+        {
+            return new JsonContentAnalysis(JsonContentStatus.Empty, Detail: "Dosya boş (0 bayt).");
+        }
+
+        if (size > options.MaxJsonContentBytes)
+        {
+            return new JsonContentAnalysis(
+                JsonContentStatus.Oversized,
+                Detail: $"JSON içeriği {options.MaxJsonContentBytes:N0} bayt inceleme sınırını aşıyor; okunmadı.");
+        }
+
+        var maxChars = (int)Math.Min(size, Math.Min(options.MaxJsonContentBytes, int.MaxValue));
+        var head = LocalizationFileReader.ReadHead(path, maxChars);
+
+        if (head is null)
+        {
+            return new JsonContentAnalysis(
+                JsonContentStatus.ReadError,
+                Detail: "JSON içeriği okunamadı veya kodlama geçersiz.");
+        }
+
+        return JsonContentInspector.Inspect(head, options.MaxJsonContentBytes);
     }
 
     private static string? ResolveRealDirectory(string directory)
