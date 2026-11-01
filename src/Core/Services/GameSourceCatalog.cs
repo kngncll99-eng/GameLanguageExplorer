@@ -31,6 +31,7 @@ public static class GameSourceCatalog
 {
     public const string SteamKey = "Steam";
     public const string EpicKey = "Epic";
+    public const string GogKey = "GOG";
     public const string ManualKey = "Manual";
 
     public static IReadOnlyList<GameSourceDescriptor> All { get; } = new List<GameSourceDescriptor>
@@ -39,10 +40,10 @@ public static class GameSourceCatalog
             "appmanifest_*.acf + libraryfolders.vdf (salt okunur)"),
         new(EpicKey, "Epic Games", GameSourceSupportLevel.Implemented,
             "Launcher manifestleri (.item; salt okunur)"),
+        new(GogKey, "GOG", GameSourceSupportLevel.Implemented,
+            "Registry + GOG klasörleri + gameInfo.igd (salt okunur)"),
         new(ManualKey, "Manuel Klasör", GameSourceSupportLevel.Implemented,
             "Kullanıcının seçtiği klasör; oyun adı kullanıcı tarafından verilir ve doğrulanmamıştır"),
-        new("GOG", "GOG", GameSourceSupportLevel.Planned,
-            "Galaxy kayıtları henüz okunmuyor"),
         new("Ubisoft", "Ubisoft Connect", GameSourceSupportLevel.Planned,
             "Yerel kurulum kayıtları henüz okunmuyor"),
         new("EA", "EA App", GameSourceSupportLevel.Planned,

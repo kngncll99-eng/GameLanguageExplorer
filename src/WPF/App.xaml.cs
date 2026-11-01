@@ -3,6 +3,7 @@ using System.Windows;
 using GameLanguageExplorer.Core.Interfaces;
 using GameLanguageExplorer.Core.Services;
 using GameLanguageExplorer.Core.Services.Epic;
+using GameLanguageExplorer.Core.Services.Gog;
 using GameLanguageExplorer.Core.Services.Localization;
 using GameLanguageExplorer.Core.Services.Localization.Export;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
@@ -68,6 +69,8 @@ public partial class App : Application
                     services.AddSingleton<IInstalledGameProvider, SteamInstalledGameProvider>();
                     services.AddSingleton<IEpicManifestLocator, EpicManifestLocator>();
                     services.AddSingleton<IInstalledGameProvider, EpicInstalledGameProvider>();
+                    services.AddSingleton<IGogInstallationLocator, RegistryGogInstallationLocator>();
+                    services.AddSingleton<IInstalledGameProvider, GogInstalledGameProvider>();
                     services.AddSingleton<IInstalledGameProvider, ManualGameFolderProvider>();
 
                     services.AddSingleton<IFolderPickerService, FolderPickerService>();
