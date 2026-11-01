@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Threading;
 using GameLanguageExplorer.Core.Interfaces;
 using GameLanguageExplorer.Core.Services.Localization;
+using GameLanguageExplorer.Core.Services.Localization.Export;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
 using GameLanguageExplorer.Core.Services.Translation;
 using GameLanguageExplorer.Data.Services;
@@ -84,9 +85,115 @@ public class TranslationWriteViewModelTests
         }
     }
 
+    [Fact]
+    public async Task ExportCommand_UsesSelectedFormatAndSavePath()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+
+        var path = tree.Write(
+            @"Localization\menu.json",
+            """{"menu":{"play":"Play","quit":"Quit"}}""");
+
+        var (_, fileId) = await PreviewTestHelper.CreateInstallAndFileAsync(
+            database, tree.Root, path, "JSON");
+
+        using (var context = database.CreateContext())
+        {
+            var record = context.DiscoveredFiles.Single(file => file.Id == fileId);
+            record.FileSize = new FileInfo(path).Length;
+            record.Sha256 = ComputeSha256(path);
+            context.SaveChanges();
+        }
+
+        var installedService = new InstalledGameScanService(
+            database.CreateFactory(),
+            Array.Empty<IInstalledGameProvider>(),
+            NullLogger<InstalledGameScanService>.Instance);
+        var fileService = new LocalizationFileScanService(
+            database.CreateFactory(),
+            NullLogger<LocalizationFileScanService>.Instance);
+        var previewService = PreviewTestHelper.CreatePreviewService(database);
+        var journalDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "gle_export_vm_journal_" + Guid.NewGuid().ToString("N"));
+        var exportPath = Path.Combine(tree.Root, "exports", "menu.csv");
+        var exportService = new RecordingExportService();
+        var saveDialog = new FixedSaveFileDialogService(exportPath);
+
+        try
+        {
+            var viewModel = new TranslationViewModel(
+                installedService,
+                fileService,
+                previewService,
+                new StubTranslationEngine(),
+                new InfiniteHttpClientFactory(),
+                new TranslationRunJournalStore(journalDirectory),
+                exportService: exportService,
+                saveFileDialogService: saveDialog);
+
+            viewModel.SelectedFile = viewModel.Files.Single(row => row.Id == fileId);
+            await viewModel.StartCommand.ExecuteAsync(null);
+            viewModel.SelectedExportFormat = TranslationViewModel.AvailableExportFormats
+                .Single(option => option.Format == LocalizationExportFormat.Csv);
+
+            Assert.True(viewModel.ExportCommand.CanExecute(null));
+            await viewModel.ExportCommand.ExecuteAsync(null);
+
+            Assert.Equal(exportPath, exportService.FilePath);
+            Assert.Equal(LocalizationExportFormat.Csv, exportService.Format);
+            Assert.Equal(2, exportService.Entries!.Count);
+            Assert.Contains("aktarıldı", viewModel.ExportStatusMessage, StringComparison.OrdinalIgnoreCase);
+            Assert.Null(viewModel.ExportErrorMessage);
+        }
+        finally
+        {
+            try { Directory.Delete(journalDirectory, recursive: true); } catch { }
+        }
+    }
+
     private static string ComputeSha256(string path)
         => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)))
             .ToLowerInvariant();
+
+    private sealed class RecordingExportService : ILocalizationExportService
+    {
+        public string? FilePath { get; private set; }
+        public LocalizationExportFormat? Format { get; private set; }
+        public IReadOnlyList<LocalizationExportEntry>? Entries { get; private set; }
+
+        public Task<LocalizationExportResult> ExportAsync(
+            string filePath,
+            LocalizationExportFormat format,
+            IReadOnlyList<LocalizationExportEntry> entries,
+            CancellationToken cancellationToken = default)
+        {
+            FilePath = filePath;
+            Format = format;
+            Entries = entries;
+
+            return Task.FromResult(new LocalizationExportResult(
+                true,
+                filePath,
+                entries.Count,
+                Array.Empty<string>(),
+                null));
+        }
+    }
+
+    private sealed class FixedSaveFileDialogService : ISaveFileDialogService
+    {
+        private readonly string? _path;
+
+        public FixedSaveFileDialogService(string? path) => _path = path;
+
+        public string? PickSaveFile(
+            string title,
+            string defaultFileName,
+            string filter,
+            string defaultExtension) => _path;
+    }
 
     private sealed class RecordingConfirmationService : IConfirmationService
     {

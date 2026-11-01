@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using GameLanguageExplorer.Core.Entities;
 using GameLanguageExplorer.Core.Services;
 using GameLanguageExplorer.Core.Services.Localization;
+using GameLanguageExplorer.Core.Services.Localization.Export;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
 using GameLanguageExplorer.Core.Services.Translation;
 using GameLanguageExplorer.WPF.Services;
@@ -78,12 +79,39 @@ public sealed class TranslationResultRow
     }
 }
 
+/// <summary>Dışa aktarma formatı seçeneği.</summary>
+public sealed record TranslationExportFormatOption(
+    LocalizationExportFormat Format,
+    string DisplayName,
+    string Extension,
+    string Filter);
+
 /// <summary>
 /// "AI Çeviri" ekranı: keşfedilmiş dosya seçimi, salt okunur önizleme, yerel LM Studio
 /// bağlantı sınaması, partili çeviri, iptal, devam ve sonuç inceleme.
 /// </summary>
 public partial class TranslationViewModel : ViewModelBase
 {
+    public static IReadOnlyList<TranslationExportFormatOption> AvailableExportFormats { get; } =
+        new[]
+        {
+            new TranslationExportFormatOption(
+                LocalizationExportFormat.Json,
+                "JSON",
+                ".json",
+                "JSON dosyası (*.json)|*.json|Tüm dosyalar (*.*)|*.*"),
+            new TranslationExportFormatOption(
+                LocalizationExportFormat.Csv,
+                "CSV",
+                ".csv",
+                "CSV dosyası (*.csv)|*.csv|Tüm dosyalar (*.*)|*.*"),
+            new TranslationExportFormatOption(
+                LocalizationExportFormat.Po,
+                "PO",
+                ".po",
+                "PO dosyası (*.po)|*.po|Tüm dosyalar (*.*)|*.*")
+        };
+
     private readonly IInstalledGameScanService _installedGameScanService;
     private readonly ILocalizationFileScanService _fileScanService;
     private readonly ILocalizationPreviewService _previewService;
@@ -94,6 +122,8 @@ public partial class TranslationViewModel : ViewModelBase
     private readonly IReadOnlyCollection<string> _writableExtensions;
     private readonly ILocalizationWriteService? _writeService;
     private readonly IConfirmationService? _confirmationService;
+    private readonly ILocalizationExportService? _exportService;
+    private readonly ISaveFileDialogService? _saveFileDialogService;
 
     private CancellationTokenSource? _operationCts;
     private CancellationTokenSource? _writeCts;
@@ -203,6 +233,18 @@ public partial class TranslationViewModel : ViewModelBase
     private string? _writeErrorMessage;
 
     [ObservableProperty]
+    private bool _isExporting;
+
+    [ObservableProperty]
+    private TranslationExportFormatOption _selectedExportFormat = AvailableExportFormats[0];
+
+    [ObservableProperty]
+    private string? _exportStatusMessage;
+
+    [ObservableProperty]
+    private string? _exportErrorMessage;
+
+    [ObservableProperty]
     private string? _elapsedText;
 
     [ObservableProperty]
@@ -222,6 +264,8 @@ public partial class TranslationViewModel : ViewModelBase
 
     public ObservableCollection<TranslationResultRow> Results { get; } = new();
 
+    public IReadOnlyList<TranslationExportFormatOption> ExportFormats => AvailableExportFormats;
+
     public IReadOnlyList<string> Languages { get; } = new[]
     {
         "English", "Turkish", "German", "French", "Spanish", "Italian",
@@ -236,6 +280,7 @@ public partial class TranslationViewModel : ViewModelBase
     public IAsyncRelayCommand ReloadCommand { get; }
     public IAsyncRelayCommand WriteToFileCommand { get; }
     public RelayCommand CancelWriteCommand { get; }
+    public IAsyncRelayCommand ExportCommand { get; }
 
     public TranslationViewModel(
         IInstalledGameScanService installedGameScanService,
@@ -245,7 +290,9 @@ public partial class TranslationViewModel : ViewModelBase
         IHttpClientFactory httpClientFactory,
         TranslationRunJournalStore? journalStore = null,
         ILocalizationWriteService? writeService = null,
-        IConfirmationService? confirmationService = null)
+        IConfirmationService? confirmationService = null,
+        ILocalizationExportService? exportService = null,
+        ISaveFileDialogService? saveFileDialogService = null)
     {
         _installedGameScanService = installedGameScanService
             ?? throw new ArgumentNullException(nameof(installedGameScanService));
@@ -260,6 +307,8 @@ public partial class TranslationViewModel : ViewModelBase
         _journalStore = journalStore ?? new TranslationRunJournalStore();
         _writeService = writeService;
         _confirmationService = confirmationService;
+        _exportService = exportService;
+        _saveFileDialogService = saveFileDialogService;
 
         var adapterInfo = previewService.GetAdapterInfo();
         _previewableExtensions = adapterInfo
@@ -278,6 +327,7 @@ public partial class TranslationViewModel : ViewModelBase
         ReloadCommand = new AsyncRelayCommand(ReloadAsync);
         WriteToFileCommand = new AsyncRelayCommand(WriteToFileAsync, CanWriteToFile);
         CancelWriteCommand = new RelayCommand(CancelWrite, () => IsWriting);
+        ExportCommand = new AsyncRelayCommand(ExportAsync, CanExport);
 
         LoadGames();
     }
@@ -295,9 +345,12 @@ public partial class TranslationViewModel : ViewModelBase
         PreviewCommand.NotifyCanExecuteChanged();
         StartCommand.NotifyCanExecuteChanged();
         WriteToFileCommand.NotifyCanExecuteChanged();
+        ExportCommand.NotifyCanExecuteChanged();
         WriteStatusMessage = null;
         WriteErrorMessage = null;
         WriteProgressPercent = 0;
+        ExportStatusMessage = null;
+        ExportErrorMessage = null;
     }
 
     partial void OnIsRunningChanged(bool value)
@@ -307,6 +360,7 @@ public partial class TranslationViewModel : ViewModelBase
         TestConnectionCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
         WriteToFileCommand.NotifyCanExecuteChanged();
+        ExportCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsBusyChanged(bool value)
@@ -314,15 +368,23 @@ public partial class TranslationViewModel : ViewModelBase
         PreviewCommand.NotifyCanExecuteChanged();
         StartCommand.NotifyCanExecuteChanged();
         WriteToFileCommand.NotifyCanExecuteChanged();
+        ExportCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsWritingChanged(bool value)
     {
         WriteToFileCommand.NotifyCanExecuteChanged();
         CancelWriteCommand.NotifyCanExecuteChanged();
+        ExportCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnHasResultsChanged(bool value) => WriteToFileCommand.NotifyCanExecuteChanged();
+    partial void OnIsExportingChanged(bool value) => ExportCommand.NotifyCanExecuteChanged();
+
+    partial void OnHasResultsChanged(bool value)
+    {
+        WriteToFileCommand.NotifyCanExecuteChanged();
+        ExportCommand.NotifyCanExecuteChanged();
+    }
 
     partial void OnShowOnlyAttentionChanged(bool value) => ApplyResultFilter();
 
@@ -415,8 +477,11 @@ public partial class TranslationViewModel : ViewModelBase
         WriteStatusMessage = null;
         WriteErrorMessage = null;
         WriteProgressPercent = 0;
+        ExportStatusMessage = null;
+        ExportErrorMessage = null;
         StartCommand.NotifyCanExecuteChanged();
         WriteToFileCommand.NotifyCanExecuteChanged();
+        ExportCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanPreview() =>
@@ -429,6 +494,97 @@ public partial class TranslationViewModel : ViewModelBase
         && !string.IsNullOrWhiteSpace(Endpoint)
         && !string.IsNullOrWhiteSpace(Model)
         && !string.Equals(SourceLanguage, TargetLanguage, StringComparison.OrdinalIgnoreCase);
+
+    private bool CanExport() =>
+        _exportService is not null
+        && _saveFileDialogService is not null
+        && HasResults
+        && !IsBusy
+        && !IsRunning
+        && !IsWriting
+        && !IsExporting
+        && _allResults.Any(IsWritableTranslation);
+
+    private async Task ExportAsync()
+    {
+        if (!CanExport() || _exportService is null || _saveFileDialogService is null)
+        {
+            return;
+        }
+
+        var entries = _allResults
+            .Where(IsWritableTranslation)
+            .Select(row => new LocalizationExportEntry(
+                row.EntryKey,
+                row.SourceText,
+                row.TranslationText))
+            .ToList();
+
+        if (entries.Count == 0)
+        {
+            ExportErrorMessage = "Dışa aktarılacak aday veya yeniden kullanılmış çeviri yok.";
+            return;
+        }
+
+        var baseName = SelectedFile?.FileName ?? "translations";
+        var defaultFileName = Path.GetFileNameWithoutExtension(baseName) + SelectedExportFormat.Extension;
+        var targetPath = _saveFileDialogService.PickSaveFile(
+            "Çevirileri Dışa Aktar",
+            defaultFileName,
+            SelectedExportFormat.Filter,
+            SelectedExportFormat.Extension);
+
+        if (string.IsNullOrWhiteSpace(targetPath))
+        {
+            ExportStatusMessage = "Dışa aktarma kullanıcı tarafından iptal edildi.";
+            ExportErrorMessage = null;
+            return;
+        }
+
+        if (SelectedFile is not null
+            && string.Equals(
+                Path.GetFullPath(targetPath),
+                Path.GetFullPath(SelectedFile.FilePath),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            ExportErrorMessage = "Dışa aktarma hedefi orijinal oyun dosyası olamaz; yeni bir dosya seçin.";
+            ExportStatusMessage = null;
+            return;
+        }
+
+        IsExporting = true;
+        ExportStatusMessage = "Çeviriler dışa aktarılıyor…";
+        ExportErrorMessage = null;
+
+        try
+        {
+            var result = await _exportService
+                .ExportAsync(targetPath, SelectedExportFormat.Format, entries)
+                .ConfigureAwait(true);
+
+            if (!result.Success)
+            {
+                ExportErrorMessage = result.ErrorMessage ?? "Dışa aktarma başarısız.";
+                ExportStatusMessage = null;
+                return;
+            }
+
+            var warningText = result.Warnings.Count == 0
+                ? string.Empty
+                : " Uyarı: " + string.Join(" | ", result.Warnings.Take(3));
+            ExportStatusMessage =
+                $"{result.EntryCount} çeviri '{targetPath}' dosyasına aktarıldı.{warningText}";
+        }
+        catch (Exception exception)
+        {
+            ExportErrorMessage = "Dışa aktarma başarısız: " + exception.Message;
+            ExportStatusMessage = null;
+        }
+        finally
+        {
+            IsExporting = false;
+        }
+    }
 
     private bool CanWriteToFile() =>
         _writeService is not null

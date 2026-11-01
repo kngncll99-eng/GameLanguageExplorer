@@ -2,7 +2,7 @@
 
 Game Language Explorer, Windows 10/11 üzerinde çalışan; oyunları tek bir katalogda toplamayı, kurulu oyunları salt okunur biçimde keşfetmeyi ve oyunların yerelleştirme dosyalarını güvenli biçimde incelemeyi amaçlayan bir WPF masaüstü uygulamasıdır.
 
-> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü, JSON için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” komutu, yan yana yerelleştirme editörü ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. JSON dışı formatlarda yazma, yedekleme ekranı ve eklenti sistemi henüz yok.
+> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü, JSON için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” ve JSON/CSV/PO dışa aktarma komutları, yan yana yerelleştirme editörü ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. JSON dışı formatlarda yazma, yedekleme ekranı ve eklenti sistemi henüz yok.
 
 ## Amaç ve Hedef
 
@@ -112,8 +112,10 @@ Salt okunur önizleme için kayıtlı adaptörler:
 - Çalışma günlüğü JSON olarak `%LOCALAPPDATA%\GameLanguageExplorer\translation-runs` altında tutulur.
 - Günlük atomik yazılır; bozuk günlük sessizce sıfırlanmaz.
 - **Dosyaya Yaz:** Seçili JSON dosyası için `Aday` ve `Yeniden kullanıldı` durumundaki çevirileri, kullanıcı onayı ve yedekleme sonrası güvenli yazma servisiyle dosyaya yazar.
+- **Dışa Aktar:** Seçili çevirileri yeni bir **JSON, CSV veya PO** dosyasına kaydeder. `SaveFileDialog` kullanılır; oyun dosyası değiştirilmez.
+- Dışa aktarmada yer tutucular korunur; kaynak/çeviri yer tutucuları uyuşmazsa sonuçta uyarı gösterilir.
 - Yazma sırasında ilerleme gösterilir; işlem iptal edilebilir ve başarı/hata/geri yükleme mesajı arayüzde gösterilir.
-- Diğer formatlarda yazma komutu pasif kalır.
+- Diğer formatlarda oyun dosyasına yazma komutu pasif kalır.
 
 ### 7. Yerelleştirme Editörü
 
@@ -142,7 +144,7 @@ Salt okunur önizleme için kayıtlı adaptörler:
 ### 9. Test ve Doğrulama
 
 - xUnit tabanlı birim ve entegrasyon testleri.
-- Son doğrulanan durum: **602 test başarılı**, 0 başarısız, 0 atlanan.
+- Son doğrulanan durum: **607 test başarılı**, 0 başarısız, 0 atlanan.
 - `scripts/validate-project.ps1` salt okunur doğrulama yapar:
   - `dotnet build`
   - `dotnet test`
@@ -212,7 +214,9 @@ GameLanguageExplorer.slnx
 | `src/WPF/ViewModels/CatalogViewModel.cs` | Katalog arama, listeleme ve Steam içe aktarma |
 | `src/WPF/ViewModels/InstalledGamesViewModel.cs` | Kurulu oyun tarama, filtreleme ve manuel klasör ekleme |
 | `src/WPF/ViewModels/FileDiscoveryViewModel.cs` | Dil dosyası tarama ve salt okunur önizleme |
-| `src/WPF/ViewModels/TranslationViewModel.cs` | AI çeviri akışı, LM Studio bağlantısı ve sonuç incelemesi |
+| `src/WPF/ViewModels/TranslationViewModel.cs` | AI çeviri akışı, LM Studio bağlantısı, yazma ve dışa aktarma |
+| `src/Core/Services/Localization/Export/LocalizationExportService.cs` | JSON/CSV/PO dışa aktarma |
+| `src/WPF/Services/SaveFileDialogService.cs` | MVVM dostu hedef dosya seçimi |
 | `src/WPF/ViewModels/EditorViewModel.cs` | Yan yana düzenleme, değişiklik takibi ve güvenli kaydetme |
 | `src/WPF/Views/EditorView.xaml` | Sanallaştırılmış kaynak/çeviri editörü |
 | `src/Data/AppDbContext.cs` | EF Core DbSet’leri ve model yapılandırması |
@@ -248,9 +252,10 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 | JSON/XML/CSV/TSV/PO/POT/INI/LocresCSV önizleme | ✅ Çalışıyor | Salt okunur |
 | Yer tutucu ve kalite kontrolleri | ✅ Çalışıyor | Çeviri ve önizleme akışında |
 | OpenAI uyumlu AI çeviri | ✅ Çalışıyor | Varsayılan yerel LM Studio; JSON için onaylı Dosyaya Yaz |
+| Çeviri dışa aktarma | ✅ Çalışıyor | JSON/CSV/PO; yeni dosya, yer tutucu uyarıları |
 | SQLite şeması ve migration’lar | ✅ Çalışıyor | Başlangıçta otomatik migration |
 | Yan yana editör | ✅ Çalışıyor | JSON düzenleme; diğer formatlar salt okunur |
-| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 602/602 test |
+| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 607/607 test |
 
 > WPF ekranlarının tamamı otomatik UI testleriyle kapsanmaz; build/test sonuçları iş mantığını doğrular, görsel akış manuel kontrol gerektirir.
 
@@ -294,7 +299,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 
 1. **Yedek yönetimi:** Geçmiş yedekleri listeleyen, geri yükleme ve temizleme işlemlerini sunan ekran.
 2. **Editör geliştirmeleri:** Arama/filtreleme, toplu düzenleme ve değişiklik geçmişi eklemek.
-3. **Çeviri çıktısını dışa aktarma:** AI çeviri sonuçlarını JSON/XML/CSV/PO gibi formatlara güvenli biçimde yazmak.
+3. **Dışa aktarma geliştirmeleri:** XLIFF/XML gibi ek formatlar ve dışa aktarma şablonları eklemek.
 4. **Format kapsamını genişletme:** Öncelik sırasıyla `MO`, `YAML`, `TXT`, `STRINGS`, `LOC` ve Unreal `.locres` araştırması.
 5. **Mağaza sağlayıcıları:** Epic, GOG, Ubisoft, EA ve Xbox için salt okunur kurulum tespiti.
 6. **Çeviri altyapısını tamamlama:** Çeviri belleği ve sözlük tablolarını akışa bağlamak; sağlayıcı profili ve güvenli anahtar yönetimi eklemek.

@@ -3,6 +3,7 @@ using System.Windows;
 using GameLanguageExplorer.Core.Interfaces;
 using GameLanguageExplorer.Core.Services;
 using GameLanguageExplorer.Core.Services.Localization;
+using GameLanguageExplorer.Core.Services.Localization.Export;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
 using GameLanguageExplorer.Core.Services.Localization.Preview.Adapters;
 using GameLanguageExplorer.Core.Services.Steam;
@@ -68,6 +69,8 @@ public partial class App : Application
 
                     services.AddSingleton<IFolderPickerService, FolderPickerService>();
                     services.AddSingleton<IConfirmationService, MessageBoxConfirmationService>();
+                    services.AddSingleton<ISaveFileDialogService, SaveFileDialogService>();
+                    services.AddSingleton<ILocalizationExportService, LocalizationExportService>();
                     services.AddSingleton<IInstalledGameScanService, InstalledGameScanService>();
 
                     // Dil dosyası keşfi (salt okunur).

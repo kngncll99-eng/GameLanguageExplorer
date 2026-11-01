@@ -189,8 +189,15 @@
                             VerticalAlignment="Bottom" Margin="0,0,8,2"
                             ToolTip="Yalnızca yazma destekli dosyalarda kullanılabilir (şimdilik JSON)." />
                     <Button Content="Yazmayı İptal Et" Command="{Binding CancelWriteCommand}"
-                            VerticalAlignment="Bottom" Margin="0,0,0,2"
+                            VerticalAlignment="Bottom" Margin="0,0,8,2"
                             Visibility="{Binding IsWriting, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <ComboBox Width="90" ItemsSource="{Binding ExportFormats}"
+                              SelectedItem="{Binding SelectedExportFormat}"
+                              DisplayMemberPath="DisplayName" VerticalAlignment="Bottom"
+                              Margin="0,0,6,2" ToolTip="Dışa aktarma formatı" />
+                    <Button Content="Dışa Aktar" Command="{Binding ExportCommand}"
+                            VerticalAlignment="Bottom" Margin="0,0,0,2"
+                            ToolTip="Seçili çevirileri yeni bir dosyaya aktarır." />
                 </WrapPanel>
 
                 <TextBlock Text="{Binding ConnectionMessage}" Style="{StaticResource SmallText}"
@@ -254,6 +261,12 @@
                 <TextBlock Text="{Binding WriteErrorMessage}" Style="{StaticResource SmallText}"
                            Margin="0,6,0,0" Foreground="{DynamicResource App.Error}"
                            Visibility="{Binding WriteErrorMessage, Converter={StaticResource StringToVisibilityConverter}}" />
+                <TextBlock Text="{Binding ExportStatusMessage}" Style="{StaticResource SmallText}"
+                           Margin="0,6,0,0" Foreground="{DynamicResource App.Info}"
+                           Visibility="{Binding ExportStatusMessage, Converter={StaticResource StringToVisibilityConverter}}" />
+                <TextBlock Text="{Binding ExportErrorMessage}" Style="{StaticResource SmallText}"
+                           Margin="0,6,0,0" Foreground="{DynamicResource App.Error}"
+                           Visibility="{Binding ExportErrorMessage, Converter={StaticResource StringToVisibilityConverter}}" />
                 <TextBlock Text="{Binding PreviewPath}" Style="{StaticResource SmallText}"
                            Margin="0,6,0,0" ToolTip="{Binding PreviewPath}" />
                 <TextBlock Text="{Binding MetricsText}" Style="{StaticResource SmallText}"
