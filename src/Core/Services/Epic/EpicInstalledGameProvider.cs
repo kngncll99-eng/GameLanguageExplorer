@@ -3,80 +3,33 @@ namespace GameLanguageExplorer.Core.Services.Epic;
 using System.Text.Json;
 using GameLanguageExplorer.Core.Entities;
 using GameLanguageExplorer.Core.Interfaces;
+using GameLanguageExplorer.Core.Services.InstalledGames;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Epic Games Launcher'ın <c>.item</c> manifestlerinden kurulu oyunları <b>salt okunur</b>
 /// biçimde tespit eder. Manifest dosyaları yalnızca okunur; hiçbir dosya değiştirilmez.
 /// </summary>
-public sealed class EpicInstalledGameProvider : IInstalledGameProvider, IScanDiagnostics
+public sealed class EpicInstalledGameProvider : InstalledGameProviderBase
 {
     public const string ProviderNameValue = "Epic";
 
     private readonly IEpicManifestLocator _locator;
-    private readonly ILogger<EpicInstalledGameProvider>? _logger;
-    private readonly List<string> _warnings = new();
-    private readonly object _warningsLock = new();
 
     public EpicInstalledGameProvider(
         IEpicManifestLocator? locator = null,
         ILogger<EpicInstalledGameProvider>? logger = null)
+        : base(ProviderNameValue, "Epic", logger)
     {
         _locator = locator ?? new EpicManifestLocator();
-        _logger = logger;
     }
 
-    public string ProviderName => ProviderNameValue;
+    protected override string UnavailableReason =>
+        "Epic Games Launcher manifest klasörü bulunamadı (Epic kurulu olmayabilir).";
 
-    public IReadOnlyList<string> LastScanWarnings
+    protected override ProviderCandidateSet LoadCandidates(CancellationToken cancellationToken)
     {
-        get
-        {
-            lock (_warningsLock)
-            {
-                return _warnings.ToArray();
-            }
-        }
-    }
-
-    public Task<InstalledGameScanBatch> ScanAsync(CancellationToken cancellationToken = default)
-        => Task.Run(() => ScanCore(cancellationToken), cancellationToken);
-
-    public async Task<InstalledGame?> DetectInstallationAsync(
-        string gameIdentifier,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(gameIdentifier))
-        {
-            return null;
-        }
-
-        var batch = await ScanAsync(cancellationToken).ConfigureAwait(false);
-
-        return batch.Games.FirstOrDefault(game =>
-            string.Equals(game.InstallSourceId, gameIdentifier.Trim(), StringComparison.OrdinalIgnoreCase));
-    }
-
-    private InstalledGameScanBatch ScanCore(CancellationToken cancellationToken)
-    {
-        lock (_warningsLock)
-        {
-            _warnings.Clear();
-        }
-
-        IReadOnlyList<string> candidateDirectories;
-
-        try
-        {
-            candidateDirectories = _locator.GetCandidateManifestDirectories();
-        }
-        catch (Exception exception)
-        {
-            var message = $"Epic manifest konumları alınamadı: {exception.Message}";
-            Warn(message);
-            return InstalledGameScanBatch.Failed(ProviderNameValue, message);
-        }
-
+        var candidateDirectories = _locator.GetCandidateManifestDirectories();
         var existingDirectories = candidateDirectories
             .Where(SafeDirectoryExists)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -84,15 +37,10 @@ public sealed class EpicInstalledGameProvider : IInstalledGameProvider, IScanDia
 
         if (existingDirectories.Count == 0)
         {
-            const string reason =
-                "Epic Games Launcher manifest klasörü bulunamadı (Epic kurulu olmayabilir).";
-            Warn(reason);
-            return InstalledGameScanBatch.Unavailable(ProviderNameValue, reason);
+            return new ProviderCandidateSet(Array.Empty<ProviderInstallCandidate>(), SourceAvailable: false);
         }
 
-        var now = DateTime.UtcNow;
-        var results = new List<InstalledGame>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<ProviderInstallCandidate>();
         var partial = false;
 
         foreach (var directory in existingDirectories)
@@ -122,26 +70,20 @@ public sealed class EpicInstalledGameProvider : IInstalledGameProvider, IScanDia
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var installation = ReadInstallation(file, now, ref partial, cancellationToken);
+                var installation = ReadInstallation(file, ref partial, cancellationToken);
 
-                if (installation is not null
-                    && seen.Add($"{installation.InstallSourceId}|{NormalizePath(installation.InstallPath)}"))
+                if (installation is not null)
                 {
                     results.Add(installation);
                 }
             }
         }
 
-        return InstalledGameScanBatch.Completed(
-            ProviderNameValue,
-            results,
-            LastScanWarnings,
-            isPartial: partial);
+        return new ProviderCandidateSet(results, SourceAvailable: true, IsPartial: partial);
     }
 
-    private InstalledGame? ReadInstallation(
+    private ProviderInstallCandidate? ReadInstallation(
         string manifestPath,
-        DateTime now,
         ref bool partial,
         CancellationToken cancellationToken)
     {
@@ -198,13 +140,6 @@ public sealed class EpicInstalledGameProvider : IInstalledGameProvider, IScanDia
                 return null;
             }
 
-            var folderExists = SafeDirectoryExists(installPath);
-
-            if (!folderExists)
-            {
-                Warn($"Epic manifesti var ama oyun klasörü bulunamadı: '{installPath}'.");
-            }
-
             if (GetBool(root, "bIsIncompleteInstall") == true)
             {
                 Warn($"Epic oyunu tamamlanmamış kurulum olarak işaretlenmiş: '{sourceId}'.");
@@ -216,21 +151,12 @@ public sealed class EpicInstalledGameProvider : IInstalledGameProvider, IScanDia
                     ? appName.Trim()
                     : Path.GetFileName(NormalizePath(installPath));
 
-            return new InstalledGame
-            {
-                GameId = 0,
-                InstallPath = installPath,
-                ExecutableName = string.IsNullOrWhiteSpace(launchExecutable)
-                    ? null
-                    : launchExecutable.Trim(),
-                SizeInBytes = GetLong(root, "InstallSize"),
-                InstalledAt = null,
-                LastScanAt = now,
-                IsInstalled = folderExists,
-                InstallSource = ProviderNameValue,
-                InstallSourceId = sourceId,
-                DetectedGameName = string.IsNullOrWhiteSpace(gameName) ? sourceId : gameName
-            };
+            return new ProviderInstallCandidate(
+                installPath,
+                sourceId,
+                gameName,
+                string.IsNullOrWhiteSpace(launchExecutable) ? null : launchExecutable.Trim(),
+                GetLong(root, "InstallSize"));
         }
         catch (JsonException exception)
         {
@@ -320,32 +246,5 @@ public sealed class EpicInstalledGameProvider : IInstalledGameProvider, IScanDia
         return null;
     }
 
-    private static bool SafeDirectoryExists(string path)
-    {
-        try
-        {
-            return Directory.Exists(path);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            return false;
-        }
-    }
-
-    private static string NormalizePath(string path)
-        => path.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-    private void Warn(string message)
-    {
-        lock (_warningsLock)
-        {
-            if (!_warnings.Contains(message, StringComparer.Ordinal))
-            {
-                _warnings.Add(message);
-            }
-        }
-
-        _logger?.LogWarning("{Message}", message);
-    }
 }
 

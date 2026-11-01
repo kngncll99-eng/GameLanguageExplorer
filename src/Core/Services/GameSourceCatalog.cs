@@ -34,6 +34,7 @@ public static class GameSourceCatalog
     public const string GogKey = "GOG";
     public const string UbisoftKey = "Ubisoft";
     public const string EaKey = "EA";
+    public const string XboxKey = "Xbox";
     public const string ManualKey = "Manual";
 
     public static IReadOnlyList<GameSourceDescriptor> All { get; } = new List<GameSourceDescriptor>
@@ -48,10 +49,10 @@ public static class GameSourceCatalog
             "Registry + config/cache + uplay_install manifestleri (salt okunur)"),
         new(EaKey, "EA App", GameSourceSupportLevel.Implemented,
             "Registry + EA Desktop/Origin InstallData + manifestleri (salt okunur)"),
+        new(XboxKey, "Xbox / Microsoft Store", GameSourceSupportLevel.Implemented,
+            "AppModel paketleri + C:\\XboxGames + AppxManifest (salt okunur)"),
         new(ManualKey, "Manuel Klasör", GameSourceSupportLevel.Implemented,
-            "Kullanıcının seçtiği klasör; oyun adı kullanıcı tarafından verilir ve doğrulanmamıştır"),
-        new("Xbox", "Xbox / Microsoft Store", GameSourceSupportLevel.Planned,
-            "MSIX paket metadata'sı henüz okunmuyor")
+            "Kullanıcının seçtiği klasör; oyun adı kullanıcı tarafından verilir ve doğrulanmamıştır")
     };
 
     public static GameSourceDescriptor? Find(string? key)

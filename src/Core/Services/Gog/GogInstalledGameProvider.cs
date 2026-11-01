@@ -3,6 +3,7 @@ namespace GameLanguageExplorer.Core.Services.Gog;
 using System.Text.Json;
 using GameLanguageExplorer.Core.Entities;
 using GameLanguageExplorer.Core.Interfaces;
+using GameLanguageExplorer.Core.Services.InstalledGames;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
@@ -10,160 +11,57 @@ using Microsoft.Extensions.Logging;
 /// metadata dosyalarından <b>salt okunur</b> biçimde tespit eder. Dosya ve kayıt defteri
 /// değerleri değiştirilmez.
 /// </summary>
-public sealed class GogInstalledGameProvider : IInstalledGameProvider, IScanDiagnostics
+public sealed class GogInstalledGameProvider : InstalledGameProviderBase
 {
     public const string ProviderNameValue = "GOG";
 
     private readonly IGogInstallationLocator _locator;
-    private readonly ILogger<GogInstalledGameProvider>? _logger;
-    private readonly List<string> _warnings = new();
-    private readonly object _warningsLock = new();
 
     public GogInstalledGameProvider(
         IGogInstallationLocator? locator = null,
         ILogger<GogInstalledGameProvider>? logger = null)
+        : base(ProviderNameValue, "GOG", logger)
     {
         _locator = locator ?? new DefaultGogInstallationLocator();
-        _logger = logger;
     }
 
-    public string ProviderName => ProviderNameValue;
+    protected override string UnavailableReason =>
+        "GOG kurulumu bulunamadı (registry veya bilinen GOG klasörleri yok).";
 
-    public IReadOnlyList<string> LastScanWarnings
+    protected override ProviderCandidateSet LoadCandidates(CancellationToken cancellationToken)
     {
-        get
-        {
-            lock (_warningsLock)
-            {
-                return _warnings.ToArray();
-            }
-        }
-    }
-
-    public Task<InstalledGameScanBatch> ScanAsync(CancellationToken cancellationToken = default)
-        => Task.Run(() => ScanCore(cancellationToken), cancellationToken);
-
-    public async Task<InstalledGame?> DetectInstallationAsync(
-        string gameIdentifier,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(gameIdentifier))
-        {
-            return null;
-        }
-
-        var batch = await ScanAsync(cancellationToken).ConfigureAwait(false);
-        var identifier = gameIdentifier.Trim();
-
-        return batch.Games.FirstOrDefault(game =>
-            string.Equals(game.InstallSourceId, identifier, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(NormalizePath(game.InstallPath), NormalizePath(identifier), StringComparison.OrdinalIgnoreCase));
-    }
-
-    private InstalledGameScanBatch ScanCore(CancellationToken cancellationToken)
-    {
-        lock (_warningsLock)
-        {
-            _warnings.Clear();
-        }
-
-        IReadOnlyList<GogInstallationCandidate> candidates;
-
-        try
-        {
-            candidates = _locator.GetInstalledCandidates();
-        }
-        catch (Exception exception)
-        {
-            var message = $"GOG kurulum kaynakları alınamadı: {exception.Message}";
-            Warn(message);
-            return InstalledGameScanBatch.Failed(ProviderNameValue, message);
-        }
+        var candidates = _locator.GetInstalledCandidates();
 
         if (candidates.Count == 0)
         {
-            const string reason =
-                "GOG kurulumu bulunamadı (registry veya bilinen GOG klasörleri yok).";
-            Warn(reason);
-            return InstalledGameScanBatch.Unavailable(ProviderNameValue, reason);
+            return new ProviderCandidateSet(Array.Empty<ProviderInstallCandidate>(), SourceAvailable: false);
         }
 
-        var now = DateTime.UtcNow;
-        var results = new List<InstalledGame>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<ProviderInstallCandidate>();
         var partial = false;
 
         foreach (var candidate in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (string.IsNullOrWhiteSpace(candidate.InstallPath)
-                || !Path.IsPathFullyQualified(candidate.InstallPath.Trim()))
+            if (!TryGetFullPath(candidate.InstallPath, out var installPath))
             {
                 partial = true;
-                Warn("GOG adayında geçerli kurulum yolu yok; aday atlandı.");
-                continue;
-            }
-
-            string installPath;
-
-            try
-            {
-                installPath = Path.GetFullPath(candidate.InstallPath.Trim());
-            }
-            catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
-            {
-                partial = true;
-                Warn($"GOG kurulum yolu çözülemedi '{candidate.InstallPath}': {exception.Message}");
+                Warn($"GOG kurulum yolu çözülemedi '{candidate.InstallPath}'.");
                 continue;
             }
 
             var folderExists = SafeDirectoryExists(installPath);
-
-            if (!folderExists)
-            {
-                Warn($"GOG kaydı var ama oyun klasörü bulunamadı: '{installPath}'.");
-            }
-
             var info = folderExists ? TryReadGameInfo(installPath) : null;
-            var gameName = FirstNonEmpty(candidate.GameName, info?.GameName, Path.GetFileName(NormalizePath(installPath)));
-            var gameId = FirstNonEmpty(candidate.GameId, info?.GameId, gameName);
-            var sourceId = string.IsNullOrWhiteSpace(gameId) ? NormalizePath(installPath) : gameId;
 
-            if (string.IsNullOrWhiteSpace(sourceId))
-            {
-                partial = true;
-                Warn($"GOG adayının kimliği belirlenemedi: '{installPath}'.");
-                continue;
-            }
-
-            var executable = FirstNonEmpty(candidate.ExecutableName, info?.ExecutableName);
-
-            var installation = new InstalledGame
-            {
-                GameId = 0,
-                InstallPath = installPath,
-                ExecutableName = executable,
-                SizeInBytes = null,
-                InstalledAt = null,
-                LastScanAt = now,
-                IsInstalled = folderExists,
-                InstallSource = ProviderNameValue,
-                InstallSourceId = sourceId,
-                DetectedGameName = string.IsNullOrWhiteSpace(gameName) ? sourceId : gameName
-            };
-
-            if (seen.Add($"{installation.InstallSourceId}|{NormalizePath(installation.InstallPath)}"))
-            {
-                results.Add(installation);
-            }
+            results.Add(new ProviderInstallCandidate(
+                installPath,
+                FirstNonEmpty(candidate.GameId, info?.GameId),
+                FirstNonEmpty(candidate.GameName, info?.GameName, Path.GetFileName(NormalizePath(installPath))),
+                FirstNonEmpty(candidate.ExecutableName, info?.ExecutableName)));
         }
 
-        return InstalledGameScanBatch.Completed(
-            ProviderNameValue,
-            results,
-            LastScanWarnings,
-            isPartial: partial);
+        return new ProviderCandidateSet(results, SourceAvailable: true, IsPartial: partial);
     }
 
     /// <summary>
@@ -326,37 +224,6 @@ public sealed class GogInstalledGameProvider : IInstalledGameProvider, IScanDiag
         }
 
         return null;
-    }
-
-    private static string? FirstNonEmpty(params string?[] values)
-        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
-
-    private static bool SafeDirectoryExists(string path)
-    {
-        try
-        {
-            return Directory.Exists(path);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            return false;
-        }
-    }
-
-    private static string NormalizePath(string? path)
-        => (path ?? string.Empty).Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-    private void Warn(string message)
-    {
-        lock (_warningsLock)
-        {
-            if (!_warnings.Contains(message, StringComparer.Ordinal))
-            {
-                _warnings.Add(message);
-            }
-        }
-
-        _logger?.LogWarning("{Message}", message);
     }
 
     private sealed record GogGameInfo(

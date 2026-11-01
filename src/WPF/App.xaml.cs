@@ -7,6 +7,7 @@ using GameLanguageExplorer.Core.Services.Epic;
 using GameLanguageExplorer.Core.Services.Gog;
 using GameLanguageExplorer.Core.Services.Localization;
 using GameLanguageExplorer.Core.Services.Ubisoft;
+using GameLanguageExplorer.Core.Services.Xbox;
 using GameLanguageExplorer.Core.Services.Localization.Export;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
 using GameLanguageExplorer.Core.Services.Localization.Preview.Adapters;
@@ -77,6 +78,8 @@ public partial class App : Application
                     services.AddSingleton<IInstalledGameProvider, UbisoftInstalledGameProvider>();
                     services.AddSingleton<IEaInstallationLocator, RegistryEaInstallationLocator>();
                     services.AddSingleton<IInstalledGameProvider, EaInstalledGameProvider>();
+                    services.AddSingleton<IXboxInstallationLocator, RegistryXboxInstallationLocator>();
+                    services.AddSingleton<IInstalledGameProvider, XboxInstalledGameProvider>();
                     services.AddSingleton<IInstalledGameProvider, ManualGameFolderProvider>();
 
                     services.AddSingleton<IFolderPickerService, FolderPickerService>();

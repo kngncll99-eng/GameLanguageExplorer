@@ -1245,28 +1245,18 @@ public class ManualGameFolderTests
 public class GameSourceCatalogTests
 {
     [Fact]
-    public void SteamEpicGogUbisoftEaAndManualAreImplemented()
+    public void AllKnownLaunchersAreMarkedAsImplemented()
     {
         var implemented = GameSourceCatalog.Implemented.Select(s => s.Key).ToList();
 
-        Assert.Equal(6, implemented.Count);
+        Assert.Equal(7, implemented.Count);
         Assert.Contains(GameSourceCatalog.SteamKey, implemented);
         Assert.Contains(GameSourceCatalog.EpicKey, implemented);
         Assert.Contains(GameSourceCatalog.GogKey, implemented);
         Assert.Contains(GameSourceCatalog.UbisoftKey, implemented);
         Assert.Contains(GameSourceCatalog.EaKey, implemented);
+        Assert.Contains(GameSourceCatalog.XboxKey, implemented);
         Assert.Contains(GameSourceCatalog.ManualKey, implemented);
-    }
-
-    [Theory]
-    [InlineData("Xbox")]
-    public void OtherLaunchersAreMarkedAsPlannedNotImplemented(string key)
-    {
-        var source = GameSourceCatalog.Find(key);
-
-        Assert.NotNull(source);
-        Assert.Equal(GameSourceSupportLevel.Planned, source!.SupportLevel);
-        Assert.Contains("Planlandı", source.SupportText);
     }
 
     [Fact]
