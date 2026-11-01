@@ -73,6 +73,48 @@ public class EditorViewModelTests
     }
 
     [Fact]
+    public async Task CsvFile_OnlyTranslationColumnIsEditable()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+
+        var path = tree.Write(
+            @"Localization\menu.csv",
+            "key,text,translation\n1,Play,\n");
+
+        var (_, fileId) = await PreviewTestHelper.CreateInstallAndFileAsync(
+            database, tree.Root, path, "CSV");
+
+        using (var context = database.CreateContext())
+        {
+            var record = context.DiscoveredFiles.Single(file => file.Id == fileId);
+            record.FileSize = new FileInfo(path).Length;
+            record.Sha256 = ComputeSha256(path);
+            context.SaveChanges();
+        }
+
+        var editor = CreateEditor(database, tree.Root, new RecordingConfirmationService());
+
+        Assert.True(editor.SelectedFile?.SupportsWrite);
+        await editor.LoadEntriesCommand.ExecuteAsync(null);
+
+        var translation = editor.Entries.Single(entry => entry.Key == "satır 2 / translation");
+        var source = editor.Entries.Single(entry => entry.Key == "satır 2 / text");
+
+        Assert.True(translation.IsEditable);
+        Assert.False(source.IsEditable);
+
+        translation.TranslationText = "Oyna";
+        Assert.True(editor.SaveCommand.CanExecute(null));
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        var content = await File.ReadAllTextAsync(path);
+        Assert.Contains("1,Play,Oyna", content);
+        Assert.Contains("1,Play", content);
+    }
+
+    [Fact]
     public async Task NonWritableFile_IsReadOnly()
     {
         using var database = new TempDatabase();
@@ -118,7 +160,8 @@ public class EditorViewModelTests
         var previewService = PreviewTestHelper.CreatePreviewService(database);
         var registry = new LocalizationFormatAdapterRegistry(new ILocalizationFormatAdapter[]
         {
-            new JsonLocalizationAdapter()
+            new JsonLocalizationAdapter(),
+            new CsvLocalizationAdapter()
         });
         var writeService = new LocalizationWriteService(
             database.CreateFactory(),

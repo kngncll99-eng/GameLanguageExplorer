@@ -35,7 +35,13 @@ public abstract class DelimitedLocalizationAdapterBase : ILocalizationFormatAdap
 
     public bool SupportsRead => true;
 
-    public bool SupportsWrite => false;
+    public virtual bool SupportsWrite => false;
+
+    /// <summary>
+    /// Boş çeviri hücreleri yazılabilir hedef sayılsın mı? Yalnızca CSV'de açıktır; salt okunur
+    /// TSV davranışı değişmez.
+    /// </summary>
+    protected virtual bool TreatEmptyTranslationAsTranslatable => false;
 
     public Task<LocalizationTextReadResult> ReadAsync(
         string filePath,
@@ -174,7 +180,7 @@ public abstract class DelimitedLocalizationAdapterBase : ILocalizationFormatAdap
     /// yeterli değildir: tanınan bir sütun adı veya veri hücreleriyle tür farkı yoksa ilk satır
     /// başlık sayılmaz ve veri olarak korunur.
     /// </summary>
-    private static List<string> DetectHeaderColumnNames(
+    protected static List<string> DetectHeaderColumnNames(
         DelimitedParseResult parse,
         out bool hasHeader,
         out bool headerCandidateRejected,
@@ -291,10 +297,18 @@ public abstract class DelimitedLocalizationAdapterBase : ILocalizationFormatAdap
     }
 
     /// <summary>Boş / sayısal / metin hücrelerini ayırır.</summary>
-    private static (LocalizationEntryStatus Status, string? SkipReason) ClassifyCell(string value, string? columnName)
+    private (LocalizationEntryStatus Status, string? SkipReason) ClassifyCell(string value, string? columnName)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
+            // Boş çeviri hücresi yazma için geçerli bir hedeftir; kaynak/id sütunları atlanır.
+            if (TreatEmptyTranslationAsTranslatable
+                && !string.IsNullOrWhiteSpace(columnName)
+                && CsvLocalizationAdapter.IsTranslationColumnName(columnName))
+            {
+                return (LocalizationEntryStatus.Translatable, null);
+            }
+
             return (LocalizationEntryStatus.Skipped, "Boş hücre");
         }
 
@@ -329,8 +343,11 @@ public abstract class DelimitedLocalizationAdapterBase : ILocalizationFormatAdap
     }
 }
 
-/// <summary>Virgül/noktalı virgül gibi ayraçları otomatik algılayan CSV ayrıştırıcısı.</summary>
-public sealed class CsvLocalizationAdapter : DelimitedLocalizationAdapterBase
+/// <summary>
+/// Virgül/noktalı virgül gibi ayraçları otomatik algılayan CSV ayrıştırıcısı.
+/// Yazma desteği yalnızca başlıkta tanınan bir çeviri sütunu varsa kullanılır.
+/// </summary>
+public sealed class CsvLocalizationAdapter : DelimitedLocalizationAdapterBase, ILocalizationWritableFormatAdapter
 {
     public const string FormatKey = "CSV";
 
@@ -343,6 +360,209 @@ public sealed class CsvLocalizationAdapter : DelimitedLocalizationAdapterBase
     public override string DisplayName => "CSV";
 
     public override string[] SupportedExtensions => new[] { ".csv" };
+
+    public override bool SupportsWrite => true;
+
+    protected override bool TreatEmptyTranslationAsTranslatable => true;
+
+    /// <summary>Başlık adı çeviri sütunu olarak kullanılabilir mi?</summary>
+    public static bool IsTranslationColumnName(string? columnName)
+    {
+        if (string.IsNullOrWhiteSpace(columnName))
+        {
+            return false;
+        }
+
+        var normalized = new string(columnName
+            .Trim()
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray());
+
+        return normalized is "translation"
+            or "translations"
+            or "target"
+            or "targettext"
+            or "translated"
+            or "translationtext"
+            or "ceviri"
+            or "hedef";
+    }
+
+    public Task<LocalizationWriteContentResult> BuildWriteContentAsync(
+        string sourceFilePath,
+        IReadOnlyList<LocalizationWriteTranslation> translations,
+        LocalizationFormatWriteOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => Task.Run(
+            () => BuildWriteContent(
+                sourceFilePath,
+                translations,
+                options ?? new LocalizationFormatWriteOptions()),
+            cancellationToken);
+
+    private static LocalizationWriteContentResult BuildWriteContent(
+        string sourceFilePath,
+        IReadOnlyList<LocalizationWriteTranslation> translations,
+        LocalizationFormatWriteOptions options)
+    {
+        var content = LocalizationFileReader.ReadText(sourceFilePath, new LocalizationFormatReadOptions
+        {
+            MaxFileBytes = options.MaxFileBytes,
+            MaxDepth = options.MaxDepth
+        });
+
+        if (!content.Success)
+        {
+            return LocalizationWriteContentResult.Fail(content.ErrorMessage ?? "CSV dosyası okunamadı.");
+        }
+
+        var parse = DelimitedTextParser.Parse(content.Text!, null);
+
+        if (!parse.IsWellFormed || parse.Rows.Count == 0)
+        {
+            return LocalizationWriteContentResult.Fail("CSV yapısı güvenli biçimde çözülemedi.");
+        }
+
+        var headerNames = DetectHeaderColumnNames(
+            parse,
+            out var hasHeader,
+            out _,
+            out _);
+
+        if (!hasHeader || headerNames.Count == 0)
+        {
+            return LocalizationWriteContentResult.Fail(
+                "CSV dosyasında güvenilir bir başlık satırı bulunamadı; yazma reddedildi.");
+        }
+
+        var translationColumnIndex = -1;
+        for (var index = 0; index < headerNames.Count; index++)
+        {
+            if (IsTranslationColumnName(headerNames[index]))
+            {
+                translationColumnIndex = index;
+                break;
+            }
+        }
+
+        if (translationColumnIndex < 0)
+        {
+            return LocalizationWriteContentResult.Fail(
+                "CSV başlığında translation/target/translated sütunu bulunamadı; yazma reddedildi.");
+        }
+
+
+
+        var rowsByLine = parse.Rows.ToDictionary(row => row.LineNumber);
+        var mutableRows = parse.Rows.Select(row => row.Fields.ToList()).ToList();
+        var applied = 0;
+        var translationHeader = headerNames[translationColumnIndex];
+
+        foreach (var translation in translations)
+        {
+            if (!TryParseEntryKey(translation.Key, out var lineNumber, out var columnName))
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"CSV kayıt anahtarı çözülemedi: '{translation.Key}'.");
+            }
+
+            // Kaynak/id gibi diğer sütunlara yazılmasına izin verme.
+            if (!IsTranslationColumnName(columnName)
+                || !string.Equals(columnName, translationHeader, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!rowsByLine.TryGetValue(lineNumber, out var row)
+                || row.Fields.Count <= translationColumnIndex)
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"CSV satırı bulunamadı veya çeviri sütunu eksik: '{translation.Key}'.");
+            }
+
+            var current = row.Fields[translationColumnIndex];
+            if (!string.Equals(current, translation.SourceText, StringComparison.Ordinal))
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"'{translation.Key}' kaynak metni değişmiş; yazma reddedildi.");
+            }
+
+            var rowIndex = parse.Rows.IndexOf(row);
+            mutableRows[rowIndex][translationColumnIndex] = translation.Translation;
+            applied++;
+        }
+
+        if (applied == 0)
+        {
+            return LocalizationWriteContentResult.Fail(
+                "CSV çeviri sütununda güncellenecek kayıt bulunamadı.");
+        }
+
+        var newline = content.Text!.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var keepTrailingNewline = content.Text.EndsWith("\n", StringComparison.Ordinal)
+                                  || content.Text.EndsWith("\r", StringComparison.Ordinal);
+        var builder = new System.Text.StringBuilder();
+
+        for (var rowIndex = 0; rowIndex < mutableRows.Count; rowIndex++)
+        {
+            var fields = mutableRows[rowIndex];
+            for (var columnIndex = 0; columnIndex < fields.Count; columnIndex++)
+            {
+                if (columnIndex > 0)
+                {
+                    builder.Append(parse.Delimiter);
+                }
+
+                builder.Append(EscapeCsvField(fields[columnIndex], parse.Delimiter));
+            }
+
+            if (rowIndex < mutableRows.Count - 1 || keepTrailingNewline)
+            {
+                builder.Append(newline);
+            }
+        }
+
+        return LocalizationWriteContentResult.Ok(builder.ToString());
+    }
+
+    private static bool TryParseEntryKey(string key, out int lineNumber, out string columnName)
+    {
+        lineNumber = 0;
+        columnName = string.Empty;
+
+        const string prefix = "satır ";
+        var separator = key.IndexOf(" / ", StringComparison.Ordinal);
+
+        if (!key.StartsWith(prefix, StringComparison.Ordinal) || separator <= prefix.Length)
+        {
+            return false;
+        }
+
+        if (!int.TryParse(
+                key[prefix.Length..separator],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out lineNumber))
+        {
+            return false;
+        }
+
+        columnName = key[(separator + 3)..];
+        return !string.IsNullOrWhiteSpace(columnName);
+    }
+
+    private static string EscapeCsvField(string value, char delimiter)
+    {
+        var needsQuotes = value.Contains(delimiter)
+                          || value.Contains('"')
+                          || value.Contains('\r')
+                          || value.Contains('\n');
+
+        return needsQuotes
+            ? "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\""
+            : value;
+    }
 }
 
 /// <summary>

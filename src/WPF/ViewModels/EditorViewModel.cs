@@ -6,6 +6,7 @@ using GameLanguageExplorer.Core.Entities;
 using GameLanguageExplorer.Core.Services;
 using GameLanguageExplorer.Core.Services.Localization;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
+using GameLanguageExplorer.Core.Services.Localization.Preview.Adapters;
 using GameLanguageExplorer.WPF.Services;
 
 namespace GameLanguageExplorer.WPF.ViewModels;
@@ -64,6 +65,7 @@ public partial class EditorViewModel : ViewModelBase
     private readonly IConfirmationService? _confirmationService;
     private readonly IReadOnlyCollection<string> _previewableExtensions;
     private readonly IReadOnlyCollection<string> _writableExtensions;
+    private readonly IReadOnlyCollection<string> _writableFormatKeys;
 
     private CancellationTokenSource? _saveCts;
 
@@ -142,6 +144,10 @@ public partial class EditorViewModel : ViewModelBase
         _writableExtensions = adapterInfo
             .Where(adapter => adapter.SupportsWrite)
             .SelectMany(adapter => adapter.Extensions)
+            .ToArray();
+        _writableFormatKeys = adapterInfo
+            .Where(adapter => adapter.SupportsWrite)
+            .Select(adapter => adapter.FormatName)
             .ToArray();
 
         LoadEntriesCommand = new AsyncRelayCommand(LoadEntriesAsync, CanLoadEntries);
@@ -230,7 +236,8 @@ public partial class EditorViewModel : ViewModelBase
                 .GetAwaiter().GetResult();
 
             foreach (var file in files
-                         .Select(file => new DiscoveredFileRow(file, _previewableExtensions, _writableExtensions))
+                         .Select(file => new DiscoveredFileRow(
+                             file, _previewableExtensions, _writableExtensions, _writableFormatKeys))
                          .OrderByDescending(row => row.SupportsWrite)
                          .ThenByDescending(row => row.SupportsPreview)
                          .ThenBy(row => row.IsMissing)
@@ -294,7 +301,7 @@ public partial class EditorViewModel : ViewModelBase
 
             foreach (var entry in preview.Entries)
             {
-                var row = new EditorEntryRow(entry, SelectedFile.SupportsWrite);
+                var row = new EditorEntryRow(entry, IsEntryEditable(SelectedFile, entry));
                 row.PropertyChanged += OnEntryPropertyChanged;
                 Entries.Add(row);
             }
@@ -321,6 +328,20 @@ public partial class EditorViewModel : ViewModelBase
             LoadEntriesCommand.NotifyCanExecuteChanged();
             SaveCommand.NotifyCanExecuteChanged();
         }
+    }
+
+    /// <summary>
+    /// CSV'de yalnızca başlıktaki çeviri sütunu düzenlenebilir; kaynak/id sütunları salt okunur kalır.
+    /// </summary>
+    private static bool IsEntryEditable(DiscoveredFileRow file, LocalizationTextEntry entry)
+    {
+        if (!file.SupportsWrite)
+        {
+            return false;
+        }
+
+        return !string.Equals(file.FormatKey, CsvLocalizationAdapter.FormatKey, StringComparison.OrdinalIgnoreCase)
+               || CsvLocalizationAdapter.IsTranslationColumnName(entry.Context);
     }
 
     private void OnEntryPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
@@ -436,6 +457,12 @@ public partial class EditorViewModel : ViewModelBase
 
     private void ApplySaveProgress(LocalizationWriteProgress progress)
     {
+        // Progress<T> callback'i tamamlanma sonrası gelebilir; nihai başarı/hata mesajını ezme.
+        if (!IsSaving)
+        {
+            return;
+        }
+
         SaveProgressPercent = Math.Clamp(progress.Percent, 0, 100);
         SaveStatusMessage = progress.Message;
     }

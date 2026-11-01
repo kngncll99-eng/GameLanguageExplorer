@@ -3,6 +3,7 @@ namespace GameLanguageExplorer.Data.Services;
 using System.Security.Cryptography;
 using System.Text;
 using GameLanguageExplorer.Core.Entities;
+using GameLanguageExplorer.Core.Interfaces;
 using GameLanguageExplorer.Core.Services.Localization;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
 using Microsoft.EntityFrameworkCore;
@@ -161,7 +162,7 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         }
 
         var extension = Path.GetExtension(path);
-        var adapter = _registry.FindByExtension(extension);
+        var adapter = ResolveAdapter(path, extension);
 
         if (adapter is null
             || !adapter.SupportsWrite
@@ -549,6 +550,29 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         }
     }
 
+
+    /// <summary>
+    /// Aynı uzantıyı birden fazla adaptör destekliyorsa (`.csv` → CSV/LocresCSV) başlıkla seçim yapar.
+    /// Böylece LocresCSV dosyası yanlışlıkla CSV olarak yazılmaz.
+    /// </summary>
+    private ILocalizationFormatAdapter? ResolveAdapter(string path, string extension)
+    {
+        var candidates = _registry.FindAllByExtension(extension);
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        if (candidates.Count == 1)
+        {
+            return candidates[0];
+        }
+
+        var head = LocalizationFileReader.ReadHead(path);
+
+        return (head is null ? null : _registry.FindByHeader(path, head)) ?? candidates[0];
+    }
 
     private static LocalizationWriteResult BuildRestoreResult(
         bool restored,

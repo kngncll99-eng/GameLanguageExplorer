@@ -1097,9 +1097,9 @@ public class LocalizationFormatAdapterRegistryTests
         Assert.Equal(expected, adapter!.FormatName);
         Assert.True(adapter.SupportsRead);
 
-        // Güvenli yazma altyapısı yalnızca JSON adaptöründe açıktır.
+        // Güvenli yazma altyapısı JSON ve CSV adaptörlerinde açıktır.
         Assert.Equal(
-            string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase),
+            extension is ".json" or ".csv",
             adapter.SupportsWrite);
     }
 
@@ -1124,7 +1124,9 @@ public class LocalizationFormatAdapterRegistryTests
 
         Assert.Equal(8, described.Count);
         Assert.All(described, d =>
-            Assert.Equal(d.FormatName == JsonLocalizationAdapter.FormatKey, d.SupportsWrite));
+            Assert.Equal(
+                d.FormatName is JsonLocalizationAdapter.FormatKey or CsvLocalizationAdapter.FormatKey,
+                d.SupportsWrite));
         Assert.Contains(described, d => d.FormatName == LocresCsvLocalizationAdapter.FormatKey);
     }
 }

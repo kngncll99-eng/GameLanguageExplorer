@@ -17,7 +17,8 @@ public sealed class DiscoveredFileRow
     public DiscoveredFileRow(
         DiscoveredFile file,
         IReadOnlyCollection<string>? previewableExtensions = null,
-        IReadOnlyCollection<string>? writableExtensions = null)
+        IReadOnlyCollection<string>? writableExtensions = null,
+        IReadOnlyCollection<string>? writableFormatKeys = null)
     {
         Id = file.Id;
         FileName = string.IsNullOrWhiteSpace(file.FileName)
@@ -40,7 +41,9 @@ public sealed class DiscoveredFileRow
 
         SupportsPreview = previewable;
         SupportsWrite = writableExtensions is not null
-                        && writableExtensions.Any(e => string.Equals(e, Extension, StringComparison.OrdinalIgnoreCase));
+                        && writableExtensions.Any(e => string.Equals(e, Extension, StringComparison.OrdinalIgnoreCase))
+                        && (writableFormatKeys is null
+                            || writableFormatKeys.Any(key => string.Equals(key, FormatKey, StringComparison.OrdinalIgnoreCase)));
 
         IsPackage = !previewable
                     && LocalizationFormatCatalog.GetSupportStatus(file.DetectedFormat, file.AdapterUsed)

@@ -120,6 +120,7 @@ public partial class TranslationViewModel : ViewModelBase
     private readonly TranslationRunJournalStore _journalStore;
     private readonly IReadOnlyCollection<string> _previewableExtensions;
     private readonly IReadOnlyCollection<string> _writableExtensions;
+    private readonly IReadOnlyCollection<string> _writableFormatKeys;
     private readonly ILocalizationWriteService? _writeService;
     private readonly IConfirmationService? _confirmationService;
     private readonly ILocalizationExportService? _exportService;
@@ -318,6 +319,10 @@ public partial class TranslationViewModel : ViewModelBase
             .Where(adapter => adapter.SupportsWrite)
             .SelectMany(adapter => adapter.Extensions)
             .ToArray();
+        _writableFormatKeys = adapterInfo
+            .Where(adapter => adapter.SupportsWrite)
+            .Select(adapter => adapter.FormatName)
+            .ToArray();
 
         PreviewCommand = new AsyncRelayCommand(PreviewAsync, CanPreview);
         StartCommand = new AsyncRelayCommand(StartAsync, CanStart);
@@ -437,7 +442,8 @@ public partial class TranslationViewModel : ViewModelBase
                 .GetAwaiter().GetResult();
 
             foreach (var file in files
-                         .Select(file => new DiscoveredFileRow(file, _previewableExtensions, _writableExtensions))
+                         .Select(file => new DiscoveredFileRow(
+                             file, _previewableExtensions, _writableExtensions, _writableFormatKeys))
                          .OrderByDescending(row => row.SupportsPreview)
                          .ThenBy(row => row.IsMissing)
                          .ThenBy(row => row.FileName, StringComparer.OrdinalIgnoreCase))
