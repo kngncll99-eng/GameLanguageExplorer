@@ -66,6 +66,8 @@
                                 Command="{Binding NavigateToFileDiscoveryCommand}" />
                         <Button Style="{StaticResource NavButton}" Content="AI Çeviri"
                                 Command="{Binding NavigateToTranslationCommand}" />
+                        <Button Style="{StaticResource NavButton}" Content="Editör"
+                                Command="{Binding NavigateToEditorCommand}" />
 
                         <Border Height="1" Margin="4,12,4,10" Background="{DynamicResource App.Border}" />
                         <TextBlock Text="YAKINDA" FontSize="11" FontWeight="Bold" Margin="12,0,0,6"
@@ -73,8 +75,6 @@
 
                         <Button Style="{StaticResource NavButton}" Content="Dosya Formatları"
                                 Command="{Binding NavigateToFormatsCommand}" IsEnabled="False" />
-                        <Button Style="{StaticResource NavButton}" Content="Yerelleştirme Editörü"
-                                Command="{Binding NavigateToEditorCommand}" IsEnabled="False" />
                         <Button Style="{StaticResource NavButton}" Content="Yedekleme ve Dışa Aktarım"
                                 Command="{Binding NavigateToBackupCommand}" IsEnabled="False" />
                         <Button Style="{StaticResource NavButton}" Content="Ayarlar"
@@ -97,7 +97,7 @@
                         <TextBlock Text="Veritabanı bağlı" FontSize="12"
                                    Foreground="{DynamicResource App.TextSecondary}" />
                     </StackPanel>
-                    <TextBlock Text="Salt okunur mod" FontSize="12" Margin="15,3,0,0"
+                    <TextBlock Text="Güvenli yazma modu (JSON)" FontSize="12" Margin="15,3,0,0"
                                Foreground="{DynamicResource App.TextMuted}" />
                 </StackPanel>
             </Grid>
@@ -116,7 +116,7 @@
                     <TextBlock Text="{Binding CurrentSectionTitle}" FontSize="18" FontWeight="SemiBold"
                                VerticalAlignment="Center" Foreground="{DynamicResource App.TextPrimary}" />
                     <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"
-                               Text="Yalnızca okuma · oyun dosyaları değiştirilmez"
+                               Text="Okuma + onaylı güvenli yazma (JSON)"
                                Foreground="{DynamicResource App.TextMuted}" />
                 </Grid>
             </Border>

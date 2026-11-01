@@ -37,6 +37,7 @@ public partial class ShellViewModel : ViewModelBase
     public IRelayCommand ToggleThemeCommand { get; }
 
     private readonly TranslationViewModel _translationViewModel;
+    private readonly EditorViewModel _editorViewModel;
     private readonly CatalogViewModel _catalogViewModel;
     private readonly InstalledGamesViewModel _installedGamesViewModel;
     private readonly FileDiscoveryViewModel _fileDiscoveryViewModel;
@@ -45,12 +46,14 @@ public partial class ShellViewModel : ViewModelBase
         CatalogViewModel catalogViewModel,
         InstalledGamesViewModel installedGamesViewModel,
         FileDiscoveryViewModel fileDiscoveryViewModel,
-        TranslationViewModel translationViewModel)
+        TranslationViewModel translationViewModel,
+        EditorViewModel editorViewModel)
     {
         _catalogViewModel = catalogViewModel;
         _installedGamesViewModel = installedGamesViewModel;
         _fileDiscoveryViewModel = fileDiscoveryViewModel;
         _translationViewModel = translationViewModel;
+        _editorViewModel = editorViewModel;
 
         NavigateToCatalogCommand = new RelayCommand(() =>
         {
@@ -71,7 +74,11 @@ public partial class ShellViewModel : ViewModelBase
         });
 
         NavigateToFormatsCommand = new RelayCommand(() => { /* yer tutucu */ });
-        NavigateToEditorCommand = new RelayCommand(() => { /* yer tutucu */ });
+        NavigateToEditorCommand = new RelayCommand(() =>
+        {
+            CurrentViewModel = _editorViewModel;
+            CurrentSectionTitle = "Yerelleştirme Editörü";
+        });
         NavigateToTranslationCommand = new RelayCommand(() =>
         {
             CurrentViewModel = _translationViewModel;

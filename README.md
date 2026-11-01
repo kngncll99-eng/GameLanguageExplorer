@@ -2,7 +2,7 @@
 
 Game Language Explorer, Windows 10/11 üzerinde çalışan; oyunları tek bir katalogda toplamayı, kurulu oyunları salt okunur biçimde keşfetmeyi ve oyunların yerelleştirme dosyalarını güvenli biçimde incelemeyi amaçlayan bir WPF masaüstü uygulamasıdır.
 
-> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü, JSON için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” komutu ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. Editör, JSON dışı formatlarda yazma, yedekleme ekranı ve eklenti sistemi henüz yok.
+> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü, JSON için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” komutu, yan yana yerelleştirme editörü ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. JSON dışı formatlarda yazma, yedekleme ekranı ve eklenti sistemi henüz yok.
 
 ## Amaç ve Hedef
 
@@ -29,7 +29,7 @@ Keşif ve önizleme varsayılan olarak **salt okunurdur**. JSON dosyaları için
   - **Kurulu Oyunlar**
   - **Dil Dosyası Keşfi**
   - **AI Çeviri**
-- Formatlar, Editör, Yedekleme ve Ayarlar menü düğmeleri şu an yer tutucudur.
+- **Editör** ekranı aktiftir; Formatlar, Yedekleme ve Ayarlar menü düğmeleri şu an yer tutucudur.
 - Koyu tema varsayılandır; açık/koyu tema arasında geçiş yapılabilir.
 - Tema tercihi `%LOCALAPPDATA%\GameLanguageExplorer\ui-preferences.json` dosyasında saklanır.
 - Seçili oyun adına göre tahmini bir vurgu rengi üreten oyun paleti vardır; bu renk kesin bilgi olarak sunulmaz.
@@ -115,7 +115,18 @@ Salt okunur önizleme için kayıtlı adaptörler:
 - Yazma sırasında ilerleme gösterilir; işlem iptal edilebilir ve başarı/hata/geri yükleme mesajı arayüzde gösterilir.
 - Diğer formatlarda yazma komutu pasif kalır.
 
-### 7. Veri ve Kalıcılık
+### 7. Yerelleştirme Editörü
+
+- Kurulu oyun ve keşfedilmiş dosya seçimi.
+- Sol sütunda orijinal metin, sağ sütunda düzenlenebilir çeviri.
+- Kayıtlar `ILocalizationPreviewService` ve `LocalizationTextEntry` üzerinden yüklenir.
+- Düzenleme yalnızca `SupportsWrite=true` dosyalarda açıktır; şu an JSON.
+- `Skipped` kayıtlar salt okunur gösterilir.
+- Değişiklikler `LocalizationWriteService.WriteAsync` ile kaydedilir; önce yedekleme/onay akışı çalışır.
+- DataGrid satır/kolon sanallaştırması ve koyu tema kaynakları kullanılır.
+- JSON dışındaki dosyalar önizlenebilir fakat salt okunur kalır.
+
+### 8. Veri ve Kalıcılık
 
 - Entity Framework Core + SQLite.
 - Uygulama başlangıcında bekleyen migration’lar otomatik uygulanır.
@@ -128,10 +139,10 @@ Salt okunur önizleme için kayıtlı adaptörler:
   - Diğer: `BackupRecord`, `PluginRegistration`
 - `BackupRecord` güvenli yazma servisi tarafından kullanılır. `TranslationMemoryEntry`, `GlossaryTerm` ve `PluginRegistration` tabloları şema olarak hazırdır; ilgili iş akışlarının bir kısmı henüz bağlı değildir.
 
-### 8. Test ve Doğrulama
+### 9. Test ve Doğrulama
 
 - xUnit tabanlı birim ve entegrasyon testleri.
-- Son doğrulanan durum: **600 test başarılı**, 0 başarısız, 0 atlanan.
+- Son doğrulanan durum: **602 test başarılı**, 0 başarısız, 0 atlanan.
 - `scripts/validate-project.ps1` salt okunur doğrulama yapar:
   - `dotnet build`
   - `dotnet test`
@@ -202,6 +213,8 @@ GameLanguageExplorer.slnx
 | `src/WPF/ViewModels/InstalledGamesViewModel.cs` | Kurulu oyun tarama, filtreleme ve manuel klasör ekleme |
 | `src/WPF/ViewModels/FileDiscoveryViewModel.cs` | Dil dosyası tarama ve salt okunur önizleme |
 | `src/WPF/ViewModels/TranslationViewModel.cs` | AI çeviri akışı, LM Studio bağlantısı ve sonuç incelemesi |
+| `src/WPF/ViewModels/EditorViewModel.cs` | Yan yana düzenleme, değişiklik takibi ve güvenli kaydetme |
+| `src/WPF/Views/EditorView.xaml` | Sanallaştırılmış kaynak/çeviri editörü |
 | `src/Data/AppDbContext.cs` | EF Core DbSet’leri ve model yapılandırması |
 | `src/Data/Services/CatalogSyncService.cs` | Katalog kayıtlarının eklenmesi/güncellenmesi |
 | `src/Data/Services/InstalledGameScanService.cs` | Steam/manuel kurulum kayıtlarının taranması |
@@ -236,7 +249,8 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 | Yer tutucu ve kalite kontrolleri | ✅ Çalışıyor | Çeviri ve önizleme akışında |
 | OpenAI uyumlu AI çeviri | ✅ Çalışıyor | Varsayılan yerel LM Studio; JSON için onaylı Dosyaya Yaz |
 | SQLite şeması ve migration’lar | ✅ Çalışıyor | Başlangıçta otomatik migration |
-| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 600/600 test |
+| Yan yana editör | ✅ Çalışıyor | JSON düzenleme; diğer formatlar salt okunur |
+| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 602/602 test |
 
 > WPF ekranlarının tamamı otomatik UI testleriyle kapsanmaz; build/test sonuçları iş mantığını doğrular, görsel akış manuel kontrol gerektirir.
 
@@ -245,7 +259,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 ### Dosya yazma ve güvenli düzenleme
 
 - JSON için güvenli yazma servisi vardır; diğer formatlarda geri yazma yoktur.
-- Yan yana kaynak/hedef editörü yoktur; JSON için AI Çeviri ekranında onaylı yazma komutu vardır. Diğer formatlarda yazma UI'ı yoktur.
+- Yan yana editör JSON için vardır; diğer formatlarda düzenleme ve yazma UI'ı yoktur.
 - JSON dışındaki formatlarda yedekleme, atomik yazma, SHA-256 bütünlük doğrulaması ve geri yükleme akışı yoktur.
 - `BackupRecord` tablosu JSON güvenli yazma servisinde kullanılır.
 
@@ -279,7 +293,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 ## Sonraki Adımlar İçin Öneriler
 
 1. **Yedek yönetimi:** Geçmiş yedekleri listeleyen, geri yükleme ve temizleme işlemlerini sunan ekran.
-2. **Editör ekranı:** Kaynak/hedef metinleri yan yana göstermek, seçili çevirileri uygulamak ve değişiklik geçmişi tutmak.
+2. **Editör geliştirmeleri:** Arama/filtreleme, toplu düzenleme ve değişiklik geçmişi eklemek.
 3. **Çeviri çıktısını dışa aktarma:** AI çeviri sonuçlarını JSON/XML/CSV/PO gibi formatlara güvenli biçimde yazmak.
 4. **Format kapsamını genişletme:** Öncelik sırasıyla `MO`, `YAML`, `TXT`, `STRINGS`, `LOC` ve Unreal `.locres` araştırması.
 5. **Mağaza sağlayıcıları:** Epic, GOG, Ubisoft, EA ve Xbox için salt okunur kurulum tespiti.

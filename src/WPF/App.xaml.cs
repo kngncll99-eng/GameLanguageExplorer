@@ -101,6 +101,7 @@ public partial class App : Application
                     services.AddSingleton<InstalledGamesViewModel>();
                     services.AddSingleton<FileDiscoveryViewModel>();
                     services.AddSingleton<TranslationViewModel>();
+                    services.AddSingleton<EditorViewModel>();
                     services.AddSingleton<ShellViewModel>();
 
                     services.AddSingleton<Shell>(sp => new Shell

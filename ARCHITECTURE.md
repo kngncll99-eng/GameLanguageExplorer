@@ -32,8 +32,9 @@ Kullanıcı arayüzü katmanı. MVVM deseni kullanır.
   görünürlük dönüştürücüleri
 - `App.xaml.cs` - DI konteyner yapılandırması, migration uygulama, pencere oluşturma
 - `Views/` - `Shell.xaml` (ana pencere, navigasyon), `CatalogView.xaml` (katalog ekranı),
-  `InstalledGamesView.xaml` (kurulu oyunlar ekranı)
-- `ViewModels/` - `ViewModelBase`, `ShellViewModel`, `CatalogViewModel`, `InstalledGamesViewModel`
+  `InstalledGamesView.xaml` (kurulu oyunlar ekranı), `EditorView.xaml` (yan yana editör)
+- `ViewModels/` - `ViewModelBase`, `ShellViewModel`, `CatalogViewModel`, `InstalledGamesViewModel`,
+  `EditorViewModel`
 - `Converters/` - `BoolToVisibilityConverter` (Invert destekli), `StringToVisibilityConverter`,
   `IntToVisibilityConverter`
 - `Services/` - `RegistrySteamRootLocator` (Windows kayıt defterinden Steam kökü; `ISteamRootLocator`)
