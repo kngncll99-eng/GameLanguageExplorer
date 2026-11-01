@@ -1,2 +1,0 @@
-Game Language Explorer review bridge smoke fixture.
-This file exists only to verify the isolated review package workflow.
