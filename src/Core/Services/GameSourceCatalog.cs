@@ -30,16 +30,17 @@ public sealed record GameSourceDescriptor(
 public static class GameSourceCatalog
 {
     public const string SteamKey = "Steam";
+    public const string EpicKey = "Epic";
     public const string ManualKey = "Manual";
 
     public static IReadOnlyList<GameSourceDescriptor> All { get; } = new List<GameSourceDescriptor>
     {
         new(SteamKey, "Steam", GameSourceSupportLevel.Implemented,
             "appmanifest_*.acf + libraryfolders.vdf (salt okunur)"),
+        new(EpicKey, "Epic Games", GameSourceSupportLevel.Implemented,
+            "Launcher manifestleri (.item; salt okunur)"),
         new(ManualKey, "Manuel Klasör", GameSourceSupportLevel.Implemented,
             "Kullanıcının seçtiği klasör; oyun adı kullanıcı tarafından verilir ve doğrulanmamıştır"),
-        new("Epic", "Epic Games", GameSourceSupportLevel.Planned,
-            "Launcher manifestleri (.item) henüz okunmuyor"),
         new("GOG", "GOG", GameSourceSupportLevel.Planned,
             "Galaxy kayıtları henüz okunmuyor"),
         new("Ubisoft", "Ubisoft Connect", GameSourceSupportLevel.Planned,

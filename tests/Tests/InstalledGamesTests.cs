@@ -1245,17 +1245,17 @@ public class ManualGameFolderTests
 public class GameSourceCatalogTests
 {
     [Fact]
-    public void OnlySteamAndManualAreImplemented()
+    public void SteamEpicAndManualAreImplemented()
     {
         var implemented = GameSourceCatalog.Implemented.Select(s => s.Key).ToList();
 
-        Assert.Equal(2, implemented.Count);
+        Assert.Equal(3, implemented.Count);
         Assert.Contains(GameSourceCatalog.SteamKey, implemented);
+        Assert.Contains(GameSourceCatalog.EpicKey, implemented);
         Assert.Contains(GameSourceCatalog.ManualKey, implemented);
     }
 
     [Theory]
-    [InlineData("Epic")]
     [InlineData("GOG")]
     [InlineData("Ubisoft")]
     [InlineData("EA")]

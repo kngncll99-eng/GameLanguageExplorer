@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using GameLanguageExplorer.Core.Interfaces;
 using GameLanguageExplorer.Core.Services;
+using GameLanguageExplorer.Core.Services.Epic;
 using GameLanguageExplorer.Core.Services.Localization;
 using GameLanguageExplorer.Core.Services.Localization.Export;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
@@ -65,6 +66,8 @@ public partial class App : Application
                     // Kurulu oyun tespiti (salt okunur). Her kaynak bağımsız bir sağlayıcıdır.
                     services.AddSingleton<ISteamRootLocator, RegistrySteamRootLocator>();
                     services.AddSingleton<IInstalledGameProvider, SteamInstalledGameProvider>();
+                    services.AddSingleton<IEpicManifestLocator, EpicManifestLocator>();
+                    services.AddSingleton<IInstalledGameProvider, EpicInstalledGameProvider>();
                     services.AddSingleton<IInstalledGameProvider, ManualGameFolderProvider>();
 
                     services.AddSingleton<IFolderPickerService, FolderPickerService>();
