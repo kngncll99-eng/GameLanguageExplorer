@@ -5,9 +5,9 @@ using GameLanguageExplorer.Core.Services.Localization.Preview;
 /// <summary>
 /// Yerelleştirme dosyası ayrıştırıcısı (adaptör).
 ///
-/// <para>Bu aşamada <b>yalnızca okuma</b> vardır: <see cref="SupportsWrite"/> daima <c>false</c>'tur
-/// ve dosyaya yazma yeteneği bilinçli olarak sözleşmeye eklenmemiştir. Böylece "destekleniyor"
-/// iddiası yalnızca gerçekten uygulanmış okuma davranışına dayanır.</para>
+/// <para>Yazma desteği yalnızca <see cref="SupportsWrite"/> <c>true</c> olan ve
+/// <c>ILocalizationWritableFormatAdapter</c> uygulayan adaptörlerde vardır. Şu an bu destek
+/// JSON ile sınırlıdır; diğer adaptörler salt okunurdur.</para>
 ///
 /// <para>Uzantı tanımak içerik desteği anlamına gelmez: adaptör, dosyayı gerçekten çözümleyip
 /// <see cref="LocalizationTextReadResult"/> üretmeden başarı bildirmez.</para>
@@ -25,7 +25,7 @@ public interface ILocalizationFormatAdapter
 
     bool SupportsRead { get; }
 
-    /// <summary>Bu aşamada her zaman <c>false</c>.</summary>
+    /// <summary>Adaptör güvenli yazma akışında kullanılabilir mi? (şu an yalnızca JSON).</summary>
     bool SupportsWrite { get; }
 
     /// <summary>

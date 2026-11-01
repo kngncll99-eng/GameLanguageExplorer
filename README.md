@@ -2,7 +2,7 @@
 
 Game Language Explorer, Windows 10/11 üzerinde çalışan; oyunları tek bir katalogda toplamayı, kurulu oyunları salt okunur biçimde keşfetmeyi ve oyunların yerelleştirme dosyalarını güvenli biçimde incelemeyi amaçlayan bir WPF masaüstü uygulamasıdır.
 
-> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. Oyun dosyalarına yazma, yedekleme/geri yükleme, editör ve eklenti sistemi henüz yok.
+> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü, JSON için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” komutu ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. Editör, JSON dışı formatlarda yazma, yedekleme ekranı ve eklenti sistemi henüz yok.
 
 ## Amaç ve Hedef
 
@@ -17,7 +17,7 @@ Temel hedefler:
 - Yerel veya OpenAI uyumlu bir LLM ile çeviri adayları üretmek; yer tutucuları, kaliteyi ve çalışma günlüğünü yönetmek.
 - Uzun vadede güvenli düzenleme, yedekleme, geri yükleme ve motor özelinde format eklentileri sunmak.
 
-Bu aşamada uygulama **oyun dosyalarını değiştirmez**. Keşif, önizleme ve çeviri sonuçları salt okunur akışlardır; kaynak dosyaya geri yazma henüz uygulanmamıştır.
+Keşif ve önizleme varsayılan olarak **salt okunurdur**. JSON dosyaları için açıkça çağrılan güvenli yazma servisi (yedek → geçici dosya → SHA-256 → atomik taşıma → gerekirse geri yükleme) vardır. AI Çeviri ekranındaki **Dosyaya Yaz** komutu yalnızca kullanıcı onayından sonra çalışır; otomatik yazma yapmaz.
 
 ## Tamamlanan Özellikler ve Modüller
 
@@ -95,7 +95,7 @@ Salt okunur önizleme için kayıtlı adaptörler:
 - Dosya boyutu varsayılan 32 MB ile sınırlıdır.
 - UTF-8 ve UTF-16 desteklenir; diğer kodlamalar okunabilir hata ile reddedilir.
 - Önizleme veritabanına yazmaz; sonuçlar geçici modeldir.
-- **Hiçbir formatta yazma desteği yoktur** (`SupportsWrite` daima `false`).
+- Şu an yalnızca **JSON** için güvenli yazma altyapısı vardır; JSON adaptöründe `SupportsWrite=true`, diğer adaptörlerde `false`. Yazma servisi orijinali doğrudan değiştirmez; yedek, geçici dosya ve SHA-256 doğrulaması kullanır.
 
 ### 6. AI Çeviri
 
@@ -111,7 +111,9 @@ Salt okunur önizleme için kayıtlı adaptörler:
 - Sonuçlar `Aday`, `İnceleme`, `Başarısız`, `Yeniden kullanıldı` ve `Atlandı` durumlarıyla gösterilir.
 - Çalışma günlüğü JSON olarak `%LOCALAPPDATA%\GameLanguageExplorer\translation-runs` altında tutulur.
 - Günlük atomik yazılır; bozuk günlük sessizce sıfırlanmaz.
-- **Çeviri sonuçları kaynak oyun dosyasına geri yazılmaz.** Bu aşamada yalnızca aday üretimi, inceleme ve günlük vardır.
+- **Dosyaya Yaz:** Seçili JSON dosyası için `Aday` ve `Yeniden kullanıldı` durumundaki çevirileri, kullanıcı onayı ve yedekleme sonrası güvenli yazma servisiyle dosyaya yazar.
+- Yazma sırasında ilerleme gösterilir; işlem iptal edilebilir ve başarı/hata/geri yükleme mesajı arayüzde gösterilir.
+- Diğer formatlarda yazma komutu pasif kalır.
 
 ### 7. Veri ve Kalıcılık
 
@@ -124,12 +126,12 @@ Salt okunur önizleme için kayıtlı adaptörler:
   - Dil dosyaları: `DiscoveredFile`, `FileFormat`, `FormatEvidence`
   - Yerelleştirme: `LocalizationProject`, `LocalizationEntry`, `GlossaryTerm`, `TranslationMemoryEntry`
   - Diğer: `BackupRecord`, `PluginRegistration`
-- `TranslationMemoryEntry`, `GlossaryTerm`, `BackupRecord` ve `PluginRegistration` tabloları şema olarak hazırdır; ilgili iş akışlarının bir kısmı henüz bağlı değildir.
+- `BackupRecord` güvenli yazma servisi tarafından kullanılır. `TranslationMemoryEntry`, `GlossaryTerm` ve `PluginRegistration` tabloları şema olarak hazırdır; ilgili iş akışlarının bir kısmı henüz bağlı değildir.
 
 ### 8. Test ve Doğrulama
 
 - xUnit tabanlı birim ve entegrasyon testleri.
-- Son doğrulanan durum: **596 test başarılı**, 0 başarısız, 0 atlanan.
+- Son doğrulanan durum: **600 test başarılı**, 0 başarısız, 0 atlanan.
 - `scripts/validate-project.ps1` salt okunur doğrulama yapar:
   - `dotnet build`
   - `dotnet test`
@@ -205,6 +207,8 @@ GameLanguageExplorer.slnx
 | `src/Data/Services/InstalledGameScanService.cs` | Steam/manuel kurulum kayıtlarının taranması |
 | `src/Data/Services/LocalizationFileScanService.cs` | Dil dosyası adaylarının salt okunur keşfi |
 | `src/Data/Services/LocalizationPreviewService.cs` | Yol güvenliği, adaptör seçimi ve önizleme |
+| `src/Data/Services/LocalizationWriteService.cs` | Yedek, geçici dosya, SHA-256 doğrulama ve atomik yazma |
+| `src/Core/Services/Localization/Preview/Adapters/JsonLocalizationAdapter.cs` | JSON okuma ve güvenli yazma içeriği üretimi |
 | `src/Core/Services/Localization/LocalizationFormatCatalog.cs` | Formatlar, güven düzeyleri ve destek durumu |
 | `src/Core/Services/Localization/JsonContentInspector.cs` | JSON içerik/güven sinyali |
 | `src/Core/Services/Localization/Preview/Adapters/` | JSON, XML, CSV, TSV, PO, POT, INI, LocresCSV adaptörleri |
@@ -227,11 +231,12 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 | Manuel oyun klasörü ekleme | ✅ Çalışıyor | `Manual` kaynağı, doğrulanmamış ad |
 | Dil dosyası keşfi | ✅ Çalışıyor | İlerleme, iptal, yol güvenliği, SHA-256 |
 | JSON içerik/güven kontrolü | ✅ Çalışıyor | Sınırlı, salt okunur, güvenli hata durumları |
+| Güvenli JSON yazma | ✅ Çalışıyor | `BackupRecord`, SHA-256, atomik taşıma, geri yükleme; AI Çeviri ekranında onaylı komut |
 | JSON/XML/CSV/TSV/PO/POT/INI/LocresCSV önizleme | ✅ Çalışıyor | Salt okunur |
 | Yer tutucu ve kalite kontrolleri | ✅ Çalışıyor | Çeviri ve önizleme akışında |
-| OpenAI uyumlu AI çeviri | ✅ Çalışıyor | Varsayılan yerel LM Studio; sonuçlar dosyaya yazılmaz |
+| OpenAI uyumlu AI çeviri | ✅ Çalışıyor | Varsayılan yerel LM Studio; JSON için onaylı Dosyaya Yaz |
 | SQLite şeması ve migration’lar | ✅ Çalışıyor | Başlangıçta otomatik migration |
-| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 596/596 test |
+| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 600/600 test |
 
 > WPF ekranlarının tamamı otomatik UI testleriyle kapsanmaz; build/test sonuçları iş mantığını doğrular, görsel akış manuel kontrol gerektirir.
 
@@ -239,10 +244,10 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 
 ### Dosya yazma ve güvenli düzenleme
 
-- Oyun dosyalarına geri yazma yok.
-- Yan yana kaynak/hedef editörü yok.
-- Değişiklik öncesi yedekleme, atomik yazma, SHA-256 bütünlük doğrulaması ve geri yükleme akışı yok.
-- `BackupRecord` tablosu var ancak iş akışı bağlı değil.
+- JSON için güvenli yazma servisi vardır; diğer formatlarda geri yazma yoktur.
+- Yan yana kaynak/hedef editörü yoktur; JSON için AI Çeviri ekranında onaylı yazma komutu vardır. Diğer formatlarda yazma UI'ı yoktur.
+- JSON dışındaki formatlarda yedekleme, atomik yazma, SHA-256 bütünlük doğrulaması ve geri yükleme akışı yoktur.
+- `BackupRecord` tablosu JSON güvenli yazma servisinde kullanılır.
 
 ### Format kapsamı
 
@@ -259,7 +264,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 
 ### Çeviri ve veri
 
-- Çeviri sonuçlarını dosyaya aktarma/geri yazma yok.
+- AI çeviri ekranı sonuçları yalnızca kullanıcı onayıyla JSON dosyasına yazılabilir; diğer formatlarda yazma yoktur.
 - `TranslationMemoryEntry` ve `GlossaryTerm` tabloları çeviri akışına tam bağlı değil; şu an dosya tabanlı günlük ve yerleşik sözlük kullanılıyor.
 - Sağlayıcı profili/yönetim ekranı ve API anahtarı saklama arayüzü yok; anahtar ortam değişkeninden okunur.
 - Tam katalog senkronizasyonu ve büyük dosya önizlemesi için ayrıntılı ilerleme/iptal deneyimi sınırlı.
@@ -273,7 +278,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 
 ## Sonraki Adımlar İçin Öneriler
 
-1. **Güvenli yazma temeli:** Yedekleme + geçici dosyaya yazma + doğrulama + atomik taşıma + geri yükleme akışını kurmak.
+1. **Yedek yönetimi:** Geçmiş yedekleri listeleyen, geri yükleme ve temizleme işlemlerini sunan ekran.
 2. **Editör ekranı:** Kaynak/hedef metinleri yan yana göstermek, seçili çevirileri uygulamak ve değişiklik geçmişi tutmak.
 3. **Çeviri çıktısını dışa aktarma:** AI çeviri sonuçlarını JSON/XML/CSV/PO gibi formatlara güvenli biçimde yazmak.
 4. **Format kapsamını genişletme:** Öncelik sırasıyla `MO`, `YAML`, `TXT`, `STRINGS`, `LOC` ve Unreal `.locres` araştırması.

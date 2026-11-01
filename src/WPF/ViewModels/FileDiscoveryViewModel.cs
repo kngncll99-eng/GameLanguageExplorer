@@ -14,7 +14,10 @@ namespace GameLanguageExplorer.WPF.ViewModels;
 /// <summary>Listede gösterilen tek bir keşfedilmiş dosya.</summary>
 public sealed class DiscoveredFileRow
 {
-    public DiscoveredFileRow(DiscoveredFile file, IReadOnlyCollection<string>? previewableExtensions = null)
+    public DiscoveredFileRow(
+        DiscoveredFile file,
+        IReadOnlyCollection<string>? previewableExtensions = null,
+        IReadOnlyCollection<string>? writableExtensions = null)
     {
         Id = file.Id;
         FileName = string.IsNullOrWhiteSpace(file.FileName)
@@ -36,6 +39,8 @@ public sealed class DiscoveredFileRow
             : LocalizationFormatCatalog.DescribeSupport(file.DetectedFormat, file.AdapterUsed);
 
         SupportsPreview = previewable;
+        SupportsWrite = writableExtensions is not null
+                        && writableExtensions.Any(e => string.Equals(e, Extension, StringComparison.OrdinalIgnoreCase));
 
         IsPackage = !previewable
                     && LocalizationFormatCatalog.GetSupportStatus(file.DetectedFormat, file.AdapterUsed)
@@ -68,6 +73,9 @@ public sealed class DiscoveredFileRow
 
     /// <summary>Bu dosya kayıtlı bir adapter ile önizlenebilir mi?</summary>
     public bool SupportsPreview { get; }
+
+    /// <summary>Bu dosya kayıtlı bir adapter ile güvenli biçimde yazılabilir mi?</summary>
+    public bool SupportsWrite { get; }
 
     private static string FormatSize(long bytes)
     {

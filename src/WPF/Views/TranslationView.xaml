@@ -184,7 +184,13 @@
                     <Button Content="Çeviriyi Başlat / Devam Et" Command="{Binding StartCommand}"
                             VerticalAlignment="Bottom" Margin="0,0,8,2" />
                     <Button Content="İptal" Command="{Binding CancelCommand}"
-                            VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                            VerticalAlignment="Bottom" Margin="0,0,8,2" />
+                    <Button Content="Dosyaya Yaz" Command="{Binding WriteToFileCommand}"
+                            VerticalAlignment="Bottom" Margin="0,0,8,2"
+                            ToolTip="Yalnızca yazma destekli dosyalarda kullanılabilir (şimdilik JSON)." />
+                    <Button Content="Yazmayı İptal Et" Command="{Binding CancelWriteCommand}"
+                            VerticalAlignment="Bottom" Margin="0,0,0,2"
+                            Visibility="{Binding IsWriting, Converter={StaticResource BoolToVisibilityConverter}}" />
                 </WrapPanel>
 
                 <TextBlock Text="{Binding ConnectionMessage}" Style="{StaticResource SmallText}"
@@ -239,6 +245,15 @@
                               VerticalAlignment="Bottom" Margin="0,0,0,2" />
                 </WrapPanel>
                 <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" Margin="0,9,0,0" />
+                <ProgressBar Value="{Binding WriteProgressPercent}" Maximum="100" Margin="0,9,0,0"
+                             Visibility="{Binding IsWriting, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <TextBlock Text="{Binding WriteStatusMessage}" Style="{StaticResource SmallText}"
+                           Margin="0,6,0,0" FontWeight="SemiBold"
+                           Foreground="{DynamicResource App.Info}"
+                           Visibility="{Binding WriteStatusMessage, Converter={StaticResource StringToVisibilityConverter}}" />
+                <TextBlock Text="{Binding WriteErrorMessage}" Style="{StaticResource SmallText}"
+                           Margin="0,6,0,0" Foreground="{DynamicResource App.Error}"
+                           Visibility="{Binding WriteErrorMessage, Converter={StaticResource StringToVisibilityConverter}}" />
                 <TextBlock Text="{Binding PreviewPath}" Style="{StaticResource SmallText}"
                            Margin="0,6,0,0" ToolTip="{Binding PreviewPath}" />
                 <TextBlock Text="{Binding MetricsText}" Style="{StaticResource SmallText}"

@@ -67,6 +67,7 @@ public partial class App : Application
                     services.AddSingleton<IInstalledGameProvider, ManualGameFolderProvider>();
 
                     services.AddSingleton<IFolderPickerService, FolderPickerService>();
+                    services.AddSingleton<IConfirmationService, MessageBoxConfirmationService>();
                     services.AddSingleton<IInstalledGameScanService, InstalledGameScanService>();
 
                     // Dil dosyası keşfi (salt okunur).
@@ -85,6 +86,12 @@ public partial class App : Application
                     services.AddSingleton<ILocalizationFormatAdapter, LocresCsvLocalizationAdapter>();
                     services.AddSingleton<LocalizationFormatAdapterRegistry>();
                     services.AddSingleton<ILocalizationPreviewService, LocalizationPreviewService>();
+
+                    // Güvenli yazma: JSON adaptörü yeni içeriği üretir, servis yedek/doğrulama/taşıma yapar.
+                    services.AddSingleton<ILocalizationFileHashProvider, Sha256LocalizationFileHashProvider>();
+                    services.AddSingleton<ILocalizationFileReplacer, AtomicLocalizationFileReplacer>();
+                    services.AddSingleton<LocalizationWriteOptions>(_ => new LocalizationWriteOptions());
+                    services.AddSingleton<ILocalizationWriteService, LocalizationWriteService>();
 
                     // Çeviri motoru ve güvenli JSON çalışma günlüğü (DB migration gerekmez).
                     services.AddSingleton<TranslationRunJournalStore>();

@@ -9,6 +9,7 @@ using GameLanguageExplorer.Core.Services;
 using GameLanguageExplorer.Core.Services.Localization;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
 using GameLanguageExplorer.Core.Services.Translation;
+using GameLanguageExplorer.WPF.Services;
 
 namespace GameLanguageExplorer.WPF.ViewModels;
 
@@ -90,8 +91,12 @@ public partial class TranslationViewModel : ViewModelBase
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TranslationRunJournalStore _journalStore;
     private readonly IReadOnlyCollection<string> _previewableExtensions;
+    private readonly IReadOnlyCollection<string> _writableExtensions;
+    private readonly ILocalizationWriteService? _writeService;
+    private readonly IConfirmationService? _confirmationService;
 
     private CancellationTokenSource? _operationCts;
+    private CancellationTokenSource? _writeCts;
     private LocalizationPreviewResult? _preview;
     private List<TranslationResultRow> _allResults = new();
 
@@ -186,6 +191,18 @@ public partial class TranslationViewModel : ViewModelBase
     private double _progressPercent;
 
     [ObservableProperty]
+    private bool _isWriting;
+
+    [ObservableProperty]
+    private double _writeProgressPercent;
+
+    [ObservableProperty]
+    private string? _writeStatusMessage;
+
+    [ObservableProperty]
+    private string? _writeErrorMessage;
+
+    [ObservableProperty]
     private string? _elapsedText;
 
     [ObservableProperty]
@@ -217,6 +234,8 @@ public partial class TranslationViewModel : ViewModelBase
     public RelayCommand CancelCommand { get; }
     public RelayCommand ToggleGameListCommand { get; }
     public IAsyncRelayCommand ReloadCommand { get; }
+    public IAsyncRelayCommand WriteToFileCommand { get; }
+    public RelayCommand CancelWriteCommand { get; }
 
     public TranslationViewModel(
         IInstalledGameScanService installedGameScanService,
@@ -224,7 +243,9 @@ public partial class TranslationViewModel : ViewModelBase
         ILocalizationPreviewService previewService,
         ITranslationEngine translationEngine,
         IHttpClientFactory httpClientFactory,
-        TranslationRunJournalStore? journalStore = null)
+        TranslationRunJournalStore? journalStore = null,
+        ILocalizationWriteService? writeService = null,
+        IConfirmationService? confirmationService = null)
     {
         _installedGameScanService = installedGameScanService
             ?? throw new ArgumentNullException(nameof(installedGameScanService));
@@ -237,8 +258,15 @@ public partial class TranslationViewModel : ViewModelBase
         _httpClientFactory = httpClientFactory
             ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _journalStore = journalStore ?? new TranslationRunJournalStore();
-        _previewableExtensions = previewService
-            .GetAdapterInfo()
+        _writeService = writeService;
+        _confirmationService = confirmationService;
+
+        var adapterInfo = previewService.GetAdapterInfo();
+        _previewableExtensions = adapterInfo
+            .SelectMany(adapter => adapter.Extensions)
+            .ToArray();
+        _writableExtensions = adapterInfo
+            .Where(adapter => adapter.SupportsWrite)
             .SelectMany(adapter => adapter.Extensions)
             .ToArray();
 
@@ -248,6 +276,8 @@ public partial class TranslationViewModel : ViewModelBase
         CancelCommand = new RelayCommand(Cancel, () => IsRunning);
         ToggleGameListCommand = new RelayCommand(() => IsGameListOpen = !IsGameListOpen);
         ReloadCommand = new AsyncRelayCommand(ReloadAsync);
+        WriteToFileCommand = new AsyncRelayCommand(WriteToFileAsync, CanWriteToFile);
+        CancelWriteCommand = new RelayCommand(CancelWrite, () => IsWriting);
 
         LoadGames();
     }
@@ -264,6 +294,10 @@ public partial class TranslationViewModel : ViewModelBase
         ResetPreview();
         PreviewCommand.NotifyCanExecuteChanged();
         StartCommand.NotifyCanExecuteChanged();
+        WriteToFileCommand.NotifyCanExecuteChanged();
+        WriteStatusMessage = null;
+        WriteErrorMessage = null;
+        WriteProgressPercent = 0;
     }
 
     partial void OnIsRunningChanged(bool value)
@@ -272,13 +306,23 @@ public partial class TranslationViewModel : ViewModelBase
         StartCommand.NotifyCanExecuteChanged();
         TestConnectionCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        WriteToFileCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsBusyChanged(bool value)
     {
         PreviewCommand.NotifyCanExecuteChanged();
         StartCommand.NotifyCanExecuteChanged();
+        WriteToFileCommand.NotifyCanExecuteChanged();
     }
+
+    partial void OnIsWritingChanged(bool value)
+    {
+        WriteToFileCommand.NotifyCanExecuteChanged();
+        CancelWriteCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnHasResultsChanged(bool value) => WriteToFileCommand.NotifyCanExecuteChanged();
 
     partial void OnShowOnlyAttentionChanged(bool value) => ApplyResultFilter();
 
@@ -331,7 +375,7 @@ public partial class TranslationViewModel : ViewModelBase
                 .GetAwaiter().GetResult();
 
             foreach (var file in files
-                         .Select(file => new DiscoveredFileRow(file, _previewableExtensions))
+                         .Select(file => new DiscoveredFileRow(file, _previewableExtensions, _writableExtensions))
                          .OrderByDescending(row => row.SupportsPreview)
                          .ThenBy(row => row.IsMissing)
                          .ThenBy(row => row.FileName, StringComparer.OrdinalIgnoreCase))
@@ -368,7 +412,11 @@ public partial class TranslationViewModel : ViewModelBase
         ProgressPercent = 0;
         CompletedCount = 0;
         TotalCount = 0;
+        WriteStatusMessage = null;
+        WriteErrorMessage = null;
+        WriteProgressPercent = 0;
         StartCommand.NotifyCanExecuteChanged();
+        WriteToFileCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanPreview() =>
@@ -381,6 +429,126 @@ public partial class TranslationViewModel : ViewModelBase
         && !string.IsNullOrWhiteSpace(Endpoint)
         && !string.IsNullOrWhiteSpace(Model)
         && !string.Equals(SourceLanguage, TargetLanguage, StringComparison.OrdinalIgnoreCase);
+
+    private bool CanWriteToFile() =>
+        _writeService is not null
+        && _confirmationService is not null
+        && SelectedGame is not null
+        && SelectedFile?.SupportsWrite == true
+        && HasResults
+        && !IsBusy
+        && !IsRunning
+        && !IsWriting
+        && _allResults.Any(IsWritableTranslation);
+
+    private static bool IsWritableTranslation(TranslationResultRow row) =>
+        row.Status is TranslationUnitStatus.Candidate or TranslationUnitStatus.Reused
+        && !string.IsNullOrWhiteSpace(row.TranslationText);
+
+    private async Task WriteToFileAsync()
+    {
+        if (!CanWriteToFile() || SelectedGame is null || SelectedFile is null || _writeService is null)
+        {
+            return;
+        }
+
+        var translations = _allResults
+            .Where(IsWritableTranslation)
+            .ToDictionary(row => row.EntryKey, row => row.TranslationText, StringComparer.Ordinal);
+
+        if (translations.Count == 0)
+        {
+            WriteErrorMessage = "Yazılabilecek aday veya yeniden kullanılmış çeviri yok.";
+            return;
+        }
+
+        var confirmed = _confirmationService?.Confirm(
+            "Dosyaya Yaz",
+            $"'{SelectedFile.FileName}' dosyasındaki {translations.Count} çeviri yazılacak.\n\n"
+            + "Orijinal dosya değişecek ve işlem öncesi yedek alınacak. Devam etmek istiyor musunuz?");
+
+        if (confirmed != true)
+        {
+            WriteStatusMessage = "Yazma işlemi kullanıcı tarafından iptal edildi.";
+            WriteErrorMessage = null;
+            return;
+        }
+
+        IsWriting = true;
+        IsBusy = true;
+        WriteErrorMessage = null;
+        WriteProgressPercent = 0;
+        WriteStatusMessage = "Güvenli yazma hazırlanıyor…";
+        _writeCts = new CancellationTokenSource();
+
+        try
+        {
+            var progress = new Progress<LocalizationWriteProgress>(ApplyWriteProgress);
+            var result = await _writeService.WriteAsync(
+                    SelectedGame.Id,
+                    SelectedFile.Id,
+                    translations,
+                    _writeCts.Token,
+                    progress)
+                .ConfigureAwait(true);
+
+            ApplyWriteResult(result);
+        }
+        catch (OperationCanceledException)
+        {
+            WriteStatusMessage = "Yazma işlemi iptal edildi; orijinal dosya korunmalıdır.";
+            WriteProgressPercent = 0;
+        }
+        catch (Exception exception)
+        {
+            WriteErrorMessage = "Yazma başarısız: " + exception.Message;
+            WriteStatusMessage = null;
+            WriteProgressPercent = 0;
+        }
+        finally
+        {
+            _writeCts?.Dispose();
+            _writeCts = null;
+            IsWriting = false;
+            IsBusy = false;
+        }
+    }
+
+    private void CancelWrite()
+    {
+        if (!IsWriting)
+        {
+            return;
+        }
+
+        WriteStatusMessage = "Yazma iptal ediliyor…";
+        _writeCts?.Cancel();
+    }
+
+    private void ApplyWriteProgress(LocalizationWriteProgress progress)
+    {
+        WriteProgressPercent = Math.Clamp(progress.Percent, 0, 100);
+        WriteStatusMessage = progress.Message;
+    }
+
+    private void ApplyWriteResult(LocalizationWriteResult result)
+    {
+        if (result.Success)
+        {
+            WriteProgressPercent = 100;
+            WriteErrorMessage = null;
+            WriteStatusMessage = result.BackupFilePath is null
+                ? result.Message
+                : $"{result.Message} Yedek: {result.BackupFilePath}";
+            return;
+        }
+
+        WriteProgressPercent = 0;
+        WriteErrorMessage = result.Message;
+        WriteStatusMessage = result.Status == LocalizationWriteStatus.Restored
+            ? "Orijinal dosya yedekten geri yüklendi."
+            : null;
+    }
 
     private async Task StartAsync()
     {

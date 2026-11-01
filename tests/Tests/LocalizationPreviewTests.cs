@@ -1096,7 +1096,11 @@ public class LocalizationFormatAdapterRegistryTests
         Assert.NotNull(adapter);
         Assert.Equal(expected, adapter!.FormatName);
         Assert.True(adapter.SupportsRead);
-        Assert.False(adapter.SupportsWrite);
+
+        // Güvenli yazma altyapısı yalnızca JSON adaptöründe açıktır.
+        Assert.Equal(
+            string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase),
+            adapter.SupportsWrite);
     }
 
     [Theory]
@@ -1119,7 +1123,8 @@ public class LocalizationFormatAdapterRegistryTests
         var described = PreviewTestHelper.CreateRegistry().Describe();
 
         Assert.Equal(8, described.Count);
-        Assert.All(described, d => Assert.False(d.SupportsWrite));
+        Assert.All(described, d =>
+            Assert.Equal(d.FormatName == JsonLocalizationAdapter.FormatKey, d.SupportsWrite));
         Assert.Contains(described, d => d.FormatName == LocresCsvLocalizationAdapter.FormatKey);
     }
 }

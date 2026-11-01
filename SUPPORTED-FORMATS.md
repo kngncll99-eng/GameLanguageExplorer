@@ -3,11 +3,12 @@
 ## Aşama 3: Okuma (ayrıştırma) desteği
 
 Bu aşamada **JSON, XML, CSV ve TSV** dosyaları salt okunur olarak ayrıştırılabilir.
-**Hiçbir format için yazma desteği yoktur** (`SupportsWrite` daima `false`).
+**JSON için güvenli yazma altyapısı** vardır; diğer formatlarda yazma desteği yoktur.
+JSON adaptöründe `SupportsWrite=true`, diğer adaptörlerde `false` değerindedir.
 
 | Format | Uzantılar | Keşif | Okuma (önizleme) | Yazma | Notlar |
 |--------|-----------|-------|------------------|-------|--------|
-| JSON | .json | ✅ | ✅ | ❌ | JSON Pointer konumu; sayı/boolean/null aday değil |
+| JSON | .json | ✅ | ✅ | ✅* | JSON Pointer konumu; sayı/boolean/null aday değil. *Güvenli yazma altyapısı |
 | XML | .xml | ✅ | ✅ | ❌ | Element metni + metin attribute; DTD kapalı (XXE yok) |
 | CSV | .csv | ✅ | ✅ | ❌ | Ayraç otomatik (` , ; \t |`), RFC 4180 tırnakları |
 | TSV | .tsv | ✅ | ✅ | ❌ | CSV ile aynı motor, ayraç sabit sekme |
@@ -80,13 +81,29 @@ değiştirilmez veya yeniden serileştirilmez.
   sinyalleri kullanılır.
 - Yol, URL, GUID ve teknik anahtar benzeri dizeler çevrilebilir metin sayılmaz.
 
+## Güvenli yazma (JSON)
+
+JSON için yazma akışı şu sırayla çalışır:
+
+1. Orijinal dosyanın SHA-256 değeri doğrulanır.
+2. Dosya yedeklenir ve `BackupRecord` tablosuna kaydedilir.
+3. Yeni JSON içeriği aynı klasörde geçici dosyaya yazılır.
+4. Geçici dosyanın SHA-256 değeri beklenen içerikle karşılaştırılır.
+5. Doğrulama başarılıysa dosya atomik olarak orijinalin üzerine taşınır.
+6. Son içerik tekrar doğrulanır; hata olursa yedekten geri yükleme denenir.
+
+Yazma yalnızca mevcut string değerlerini JSON Pointer ile değiştirir. Sayı/boolean/null
+değerlerine, bilinmeyen yollara veya önizlemeden sonra değişmiş kaynak metinlere yazılmaz.
+AI Çeviri ekranındaki “Dosyaya Yaz” komutu yalnızca kullanıcı onayından sonra çalışır;
+diğer formatlarda yazma komutu pasiftir.
+
 ## Ayrıştırma kuralları
 
 | Konu | Davranış |
 |------|----------|
 | Konum | JSON Pointer (`/a/b/0`), XPath benzeri (`/root/item[2]/@name`), CSV `satır 3 / text` |
 | Çevrilebilirlik | `Translatable`, `Ambiguous` (bağlam belirsiz), `Skipped` (neden yazılır) |
-| Yapı korunumu | Dosya yalnızca okunur; yeniden serileştirme/yazma yok |
+| Yapı korunumu | Okuma salt okunur; güvenli yazma yalnızca JSON için geçici dosya + atomik taşıma ile yapılır |
 | Değişkenler | `{ad}`, `{0}`, `%s`, `%d`, `\n`, `<b>`, `[color=red]` tanınır ve imza üretilir |
 | PO çoğul | `msgid_plural` + her `msgstr[n]` **ayrı kayıt** (`PluralIndex/PluralCount/PluralSourceText`); birleştirilmez |
 | PO fuzzy | `#, fuzzy` → durum `Belirsiz` + `Flags=["fuzzy"]`; kayıt atlanmaz |
@@ -107,5 +124,5 @@ değiştirilmez veya yeniden serileştirilmez.
 | INI/YAML/STRINGS/LOC okuma | ❌ Planlanmadı |
 | Unreal `.locres` / `.uasset` ayrıştırma | ❌ Planlanmadı |
 | Paket açma (.pak, .bundle, .archive) | ❌ Planlanmadı |
-| **Yazma / geri yazma** | ❌ Bu aşamada yok |
+| **Yazma / geri yazma** | ✅ Yalnızca JSON güvenli yazma altyapısı; diğer formatlar ❌ |
 

@@ -1,0 +1,629 @@
+namespace GameLanguageExplorer.Data.Services;
+
+using System.Security.Cryptography;
+using System.Text;
+using GameLanguageExplorer.Core.Entities;
+using GameLanguageExplorer.Core.Services.Localization;
+using GameLanguageExplorer.Core.Services.Localization.Preview;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+/// <summary>
+/// Dil dosyasına yazmayı güvenli bir akışla gerçekleştirir:
+/// yedek → geçici dosya → SHA-256 doğrulama → atomik taşıma → gerekirse geri yükleme.
+/// </summary>
+public sealed class LocalizationWriteService : ILocalizationWriteService
+{
+    private readonly IDbContextFactory<AppDbContext> _dbContextFactory;
+    private readonly LocalizationFormatAdapterRegistry _registry;
+    private readonly LocalizationWriteOptions _options;
+    private readonly ILocalizationFileHashProvider _hashProvider;
+    private readonly ILocalizationFileReplacer _replacer;
+    private readonly ILogger<LocalizationWriteService> _logger;
+
+    public LocalizationWriteService(
+        IDbContextFactory<AppDbContext> dbContextFactory,
+        LocalizationFormatAdapterRegistry registry,
+        LocalizationWriteOptions? options = null,
+        ILocalizationFileHashProvider? hashProvider = null,
+        ILocalizationFileReplacer? replacer = null,
+        ILogger<LocalizationWriteService>? logger = null)
+    {
+        _dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
+        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        _options = options ?? new LocalizationWriteOptions();
+        _hashProvider = hashProvider ?? new Sha256LocalizationFileHashProvider();
+        _replacer = replacer ?? new AtomicLocalizationFileReplacer();
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<LocalizationWriteService>.Instance;
+    }
+
+    public async Task<LocalizationWriteResult> WriteAsync(
+        int installedGameId,
+        int discoveredFileId,
+        IReadOnlyDictionary<string, string> translations,
+        CancellationToken cancellationToken = default,
+        IProgress<LocalizationWriteProgress>? progress = null)
+    {
+        try
+        {
+            return await WriteCoreAsync(installedGameId, discoveredFileId, translations, cancellationToken, progress)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.Cancelled,
+                "Yazma işlemi kullanıcı tarafından iptal edildi.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Güvenli dil dosyası yazma işlemi başarısız: oyun={GameId} dosya={FileId}",
+                installedGameId, discoveredFileId);
+
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.WriteFailed,
+                $"Güvenli yazma başarısız: {ex.Message}");
+        }
+    }
+
+    private async Task<LocalizationWriteResult> WriteCoreAsync(
+        int installedGameId,
+        int discoveredFileId,
+        IReadOnlyDictionary<string, string> translations,
+        CancellationToken cancellationToken,
+        IProgress<LocalizationWriteProgress>? progress)
+    {
+        if (translations is null || translations.Count == 0)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.NoTranslations,
+                "Yazılacak çeviri kaydı yok.");
+        }
+
+        progress?.Report(new LocalizationWriteProgress(
+            LocalizationWriteStage.Validating, "Dosya ve yol doğrulanıyor…", 5));
+
+        await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+        var install = await db.InstalledGames
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.Id == installedGameId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (install is null)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.NotFound,
+                $"Kurulum kaydı bulunamadı (Id={installedGameId}).");
+        }
+
+        // Yazma sırasında SHA-256 alanını güncelleyebilmek için kayıt tracked tutulur.
+        var file = await db.DiscoveredFiles
+            .FirstOrDefaultAsync(f => f.Id == discoveredFileId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (file is null)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.NotFound,
+                $"Keşfedilmiş dosya kaydı bulunamadı (Id={discoveredFileId}).");
+        }
+
+        if (file.InstalledGameId != installedGameId)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.PathRejected,
+                "Dosya kaydı seçili kuruluma ait değil; yazma reddedildi.",
+                file.FilePath);
+        }
+
+        var root = PathSafety.TryNormalize(install.InstallPath);
+        var path = PathSafety.TryNormalize(file.FilePath);
+
+        if (root is null || path is null || !PathSafety.IsUnderRoot(path, root))
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.PathRejected,
+                "Dosya yolu kurulum kökünün içinde değil; yazma reddedildi.",
+                file.FilePath);
+        }
+
+        if (!File.Exists(path))
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.NotFound,
+                $"Dosya diskte bulunamadı: '{path}'.",
+                path);
+        }
+
+        // Sembolik bağlantı hedefi kurulum kökü dışına çıkıyorsa yazma yapılmaz.
+        var fileInfo = new FileInfo(path);
+
+        if (fileInfo.LinkTarget is not null)
+        {
+            var target = fileInfo.ResolveLinkTarget(returnFinalTarget: true);
+
+            if (target is null || !PathSafety.IsUnderRoot(target.FullName, root))
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.PathRejected,
+                    "Dosya kök dizin dışına işaret ediyor; yazma reddedildi.",
+                    path);
+            }
+        }
+
+        if (File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly))
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.PathRejected,
+                "Dosya salt okunur; yazma reddedildi.",
+                path);
+        }
+
+        var extension = Path.GetExtension(path);
+        var adapter = _registry.FindByExtension(extension);
+
+        if (adapter is null
+            || !adapter.SupportsWrite
+            || adapter is not ILocalizationWritableFormatAdapter writableAdapter)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.UnsupportedFormat,
+                $"'{extension}' uzantısı için yazılabilir adaptör yok.",
+                path);
+        }
+
+        var originalSha256 = await _hashProvider.ComputeSha256Async(path, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Kayıtlı hash varsa dosya önizlemeden bu yana değişmiş olabilir.
+        if (!string.IsNullOrWhiteSpace(file.Sha256)
+            && !string.Equals(file.Sha256, originalSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.SourceChanged,
+                "Kaynak dosya son taramadan sonra değişmiş; yazma reddedildi.",
+                path);
+        }
+
+        var read = await adapter.ReadAsync(
+                path,
+                new LocalizationFormatReadOptions
+                {
+                    MaxFileBytes = _options.MaxFileBytes
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!read.Success)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.WriteFailed,
+                read.ErrorMessage ?? "Kaynak dosya yazma için okunamadı.",
+                path);
+        }
+
+        var entriesByKey = read.Entries.ToDictionary(e => e.Key, StringComparer.Ordinal);
+        var writeTranslations = new List<LocalizationWriteTranslation>();
+
+        foreach (var pair in translations)
+        {
+            if (!entriesByKey.TryGetValue(pair.Key, out var entry))
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.WriteFailed,
+                    $"Çeviri anahtarı kaynak dosyada bulunamadı: '{pair.Key}'.",
+                    path);
+            }
+
+            if (entry.Status == LocalizationEntryStatus.Skipped)
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.WriteFailed,
+                    $"'{pair.Key}' çevrilebilir bir kayıt değil; yazma reddedildi.",
+                    path);
+            }
+
+            if (string.IsNullOrWhiteSpace(pair.Value))
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.WriteFailed,
+                    $"'{pair.Key}' için boş çeviri yazılamaz.",
+                    path);
+            }
+
+            writeTranslations.Add(new LocalizationWriteTranslation(
+                entry.Key,
+                entry.SourceText,
+                pair.Value));
+        }
+
+
+        var content = await writableAdapter.BuildWriteContentAsync(
+                path,
+                writeTranslations,
+                new LocalizationFormatWriteOptions
+                {
+                    MaxFileBytes = _options.MaxFileBytes
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!content.Success || content.Content is null)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.WriteFailed,
+                content.ErrorMessage ?? "Yeni dosya içeriği üretilemedi.",
+                path);
+        }
+
+        var newContent = content.Content;
+        var expectedNewSha256 = ComputeSha256Text(newContent);
+        var backupDirectory = ResolveBackupDirectory();
+        Directory.CreateDirectory(backupDirectory);
+
+        var backupPath = Path.Combine(backupDirectory, $"{Guid.NewGuid():N}.bak");
+        var temporaryPath = Path.Combine(
+            Path.GetDirectoryName(path)!,
+            $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.gle-tmp");
+
+        BackupRecord? backupRecord = null;
+        var originalFileSize = new FileInfo(path).Length;
+
+        try
+        {
+            progress?.Report(new LocalizationWriteProgress(
+                LocalizationWriteStage.BackingUp, "Orijinal dosya yedekleniyor…", 20));
+            cancellationToken.ThrowIfCancellationRequested();
+
+            File.Copy(path, backupPath, overwrite: false);
+            var backupSha256 = await _hashProvider.ComputeSha256Async(backupPath, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!string.Equals(backupSha256, originalSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                SafeDelete(backupPath);
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.BackupFailed,
+                    "Yedek dosyasının SHA-256 değeri orijinalle eşleşmiyor.",
+                    path);
+            }
+
+            backupRecord = new BackupRecord
+            {
+                OriginalFilePath = path,
+                BackupFilePath = backupPath,
+                OriginalSha256 = originalSha256,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            db.BackupRecords.Add(backupRecord);
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            progress?.Report(new LocalizationWriteProgress(
+                LocalizationWriteStage.WritingTemporary, "Yeni içerik geçici dosyaya yazılıyor…", 45));
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await WriteAllTextDurableAsync(temporaryPath, newContent, cancellationToken).ConfigureAwait(false);
+
+            var temporarySha256 = await _hashProvider.ComputeSha256Async(temporaryPath, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!string.Equals(temporarySha256, expectedNewSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                SafeDelete(temporaryPath);
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.VerificationFailed,
+                    "Geçici dosyanın SHA-256 doğrulaması başarısız; orijinal dosya değiştirilmedi.",
+                    path);
+            }
+
+            progress?.Report(new LocalizationWriteProgress(
+                LocalizationWriteStage.Verifying, "Geçici dosyanın SHA-256 değeri doğrulandı.", 70));
+
+            var beforeReplaceSha256 = await _hashProvider.ComputeSha256Async(path, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!string.Equals(beforeReplaceSha256, originalSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                SafeDelete(temporaryPath);
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.SourceChanged,
+                    "Dosya yazma sırasında değişti; orijinal dosya değiştirilmedi.",
+                    path);
+            }
+
+
+            try
+            {
+                progress?.Report(new LocalizationWriteProgress(
+                    LocalizationWriteStage.Replacing, "Dosya atomik olarak değiştiriliyor…", 80));
+                cancellationToken.ThrowIfCancellationRequested();
+
+                _replacer.Replace(temporaryPath, path);
+
+                var finalSha256 = await _hashProvider.ComputeSha256Async(path, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!string.Equals(finalSha256, expectedNewSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    var restored = await TryRestoreAsync(
+                            db, backupRecord, path, originalSha256, originalFileSize, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    return BuildRestoreResult(
+                        restored, path, backupRecord, originalSha256, expectedNewSha256,
+                        "Yazma sonrası SHA-256 doğrulaması başarısız.");
+                }
+
+                file.Sha256 = expectedNewSha256;
+                file.FileSize = Encoding.UTF8.GetByteCount(newContent);
+                file.LastValidationResult = "Güvenli yazma tamamlandı; SHA-256 doğrulandı.";
+                file.LastValidatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                progress?.Report(new LocalizationWriteProgress(
+                    LocalizationWriteStage.Completed, "Güvenli yazma tamamlandı.", 100));
+
+                return new LocalizationWriteResult(
+                    true,
+                    LocalizationWriteStatus.Success,
+                    "Çeviriler güvenli biçimde dosyaya yazıldı.",
+                    path,
+                    backupRecord.BackupFilePath,
+                    backupRecord.Id,
+                    originalSha256,
+                    expectedNewSha256);
+            }
+            catch (Exception ex)
+            {
+                SafeDelete(temporaryPath);
+                _logger.LogError(ex, "Atomik taşıma başarısız; yedekten geri yükleme denenecek: {Path}", path);
+
+                progress?.Report(new LocalizationWriteProgress(
+                    LocalizationWriteStage.Restoring, "Hata oluştu; yedekten geri yükleniyor…", 90));
+
+                var restored = await TryRestoreAsync(
+                        db, backupRecord, path, originalSha256, originalFileSize, cancellationToken)
+                    .ConfigureAwait(false);
+
+                return BuildRestoreResult(
+                    restored, path, backupRecord, originalSha256, expectedNewSha256,
+                    $"Dosya değiştirilemedi: {ex.Message}");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            SafeDelete(temporaryPath);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SafeDelete(temporaryPath);
+            _logger.LogError(ex, "Güvenli yazma hazırlığı başarısız: {Path}", path);
+
+            var restored = backupRecord is null
+                ? false
+                : await TryRestoreAsync(
+                        db, backupRecord, path, originalSha256, originalFileSize, cancellationToken)
+                    .ConfigureAwait(false);
+
+            return BuildRestoreResult(
+                restored, path, backupRecord, originalSha256, expectedNewSha256,
+                $"Yazma başarısız: {ex.Message}");
+        }
+    }
+
+
+    public async Task<LocalizationWriteResult> RestoreAsync(
+        int backupRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+            var record = await db.BackupRecords
+                .FirstOrDefaultAsync(b => b.Id == backupRecordId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (record is null)
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.NotFound,
+                    $"Yedek kaydı bulunamadı (Id={backupRecordId}).");
+            }
+
+            var originalPath = PathSafety.TryNormalize(record.OriginalFilePath);
+
+            if (originalPath is null || !File.Exists(record.BackupFilePath))
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.NotFound,
+                    "Yedek dosyası veya orijinal yol bulunamadı.",
+                    record.OriginalFilePath);
+            }
+
+            var originalFileSize = new FileInfo(record.BackupFilePath).Length;
+            var restored = await TryRestoreAsync(
+                    db, record, originalPath, record.OriginalSha256, originalFileSize, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!restored)
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.RestoreFailed,
+                    "Yedekten geri yükleme başarısız oldu.",
+                    originalPath);
+            }
+
+            return new LocalizationWriteResult(
+                true,
+                LocalizationWriteStatus.Restored,
+                "Yedek başarıyla geri yüklendi.",
+                originalPath,
+                record.BackupFilePath,
+                record.Id,
+                record.OriginalSha256,
+                RestoredFromBackup: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Yedekten geri yükleme başarısız: yedek={BackupId}", backupRecordId);
+
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.RestoreFailed,
+                $"Yedekten geri yükleme başarısız: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Yedeği doğrulayıp orijinal konuma geri yükler. Başarısız olursa orijinal dosyaya
+    /// dokunmamaya çalışır; yedek dosyası silinmez.
+    /// </summary>
+    private async Task<bool> TryRestoreAsync(
+        AppDbContext db,
+        BackupRecord record,
+        string originalPath,
+        string expectedOriginalSha256,
+        long originalFileSize,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(record.BackupFilePath))
+        {
+            return false;
+        }
+
+        var restoreTemporaryPath = Path.Combine(
+            Path.GetDirectoryName(originalPath)!,
+            $".{Path.GetFileName(originalPath)}.{Guid.NewGuid():N}.restore-tmp");
+
+        try
+        {
+            var backupSha256 = await _hashProvider.ComputeSha256Async(record.BackupFilePath, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!string.Equals(backupSha256, expectedOriginalSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            File.Copy(record.BackupFilePath, restoreTemporaryPath, overwrite: true);
+            _replacer.Replace(restoreTemporaryPath, originalPath);
+            restoreTemporaryPath = string.Empty;
+
+            var restoredSha256 = await _hashProvider.ComputeSha256Async(originalPath, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!string.Equals(restoredSha256, expectedOriginalSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            record.IsRestored = true;
+            record.RestoredAt = DateTime.UtcNow;
+
+            var file = await db.DiscoveredFiles
+                .FirstOrDefaultAsync(f => f.FilePath == originalPath, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (file is not null)
+            {
+                file.Sha256 = expectedOriginalSha256;
+                file.FileSize = originalFileSize;
+                file.LastValidationResult = "Yedekten geri yükleme tamamlandı.";
+                file.LastValidatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Yedekten geri yükleme denemesi başarısız: {Path}", originalPath);
+            return false;
+        }
+        finally
+        {
+            SafeDelete(restoreTemporaryPath);
+        }
+    }
+
+
+    private static LocalizationWriteResult BuildRestoreResult(
+        bool restored,
+        string path,
+        BackupRecord? backupRecord,
+        string originalSha256,
+        string expectedNewSha256,
+        string reason)
+    {
+        var message = restored
+            ? $"{reason} Orijinal dosya yedekten geri yüklendi."
+            : $"{reason} Yedekten geri yükleme de başarısız oldu; yedek korunuyor.";
+
+        return new LocalizationWriteResult(
+            false,
+            restored ? LocalizationWriteStatus.Restored : LocalizationWriteStatus.RestoreFailed,
+            message,
+            path,
+            backupRecord?.BackupFilePath,
+            backupRecord?.Id,
+            originalSha256,
+            expectedNewSha256,
+            restored);
+    }
+
+    private string ResolveBackupDirectory()
+        => string.IsNullOrWhiteSpace(_options.BackupDirectory)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "GameLanguageExplorer",
+                "backups")
+            : Path.GetFullPath(_options.BackupDirectory);
+
+    /// <summary>Geçici dosyayı yazar ve disk tamponunu boşaltır.</summary>
+    private static async Task WriteAllTextDurableAsync(
+        string path,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        var bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(content);
+
+        await using var stream = new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 64 * 1024,
+            FileOptions.WriteThrough);
+
+        await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        stream.Flush(flushToDisk: true);
+    }
+
+    private static string ComputeSha256Text(string text)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+
+    private static void SafeDelete(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Geçici dosya silinemezse asıl hata maskelenmez.
+        }
+    }
+
+}

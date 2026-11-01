@@ -2,7 +2,9 @@ namespace GameLanguageExplorer.Core.Services.Localization.Preview.Adapters;
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GameLanguageExplorer.Core.Interfaces;
 
 /// <summary>
@@ -15,7 +17,7 @@ using GameLanguageExplorer.Core.Interfaces;
 /// <item>Dosya asla yeniden serileştirilmez veya yazılmaz.</item>
 /// </list>
 /// </summary>
-public sealed class JsonLocalizationAdapter : ILocalizationFormatAdapter
+public sealed class JsonLocalizationAdapter : ILocalizationFormatAdapter, ILocalizationWritableFormatAdapter
 {
     public const string FormatKey = "JSON";
 
@@ -23,7 +25,7 @@ public sealed class JsonLocalizationAdapter : ILocalizationFormatAdapter
     public string DisplayName => "JSON";
     public string[] SupportedExtensions => new[] { ".json" };
     public bool SupportsRead => true;
-    public bool SupportsWrite => false;
+    public bool SupportsWrite => true;
 
     public Task<LocalizationTextReadResult> ReadAsync(
         string filePath,
@@ -78,6 +80,181 @@ public sealed class JsonLocalizationAdapter : ILocalizationFormatAdapter
                 LocalizationReadStatus.InvalidSyntax,
                 $"JSON ayrıştırılamadı: {ex.Message}");
         }
+    }
+
+    public Task<LocalizationWriteContentResult> BuildWriteContentAsync(
+        string sourceFilePath,
+        IReadOnlyList<LocalizationWriteTranslation> translations,
+        LocalizationFormatWriteOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => Task.Run(
+            () => BuildWriteContent(sourceFilePath, translations, options ?? new LocalizationFormatWriteOptions()),
+            cancellationToken);
+
+    private static LocalizationWriteContentResult BuildWriteContent(
+        string sourceFilePath,
+        IReadOnlyList<LocalizationWriteTranslation> translations,
+        LocalizationFormatWriteOptions options)
+    {
+        if (translations.Count == 0)
+        {
+            return LocalizationWriteContentResult.Fail("Yazılacak çeviri kaydı yok.");
+        }
+
+        var readOptions = new LocalizationFormatReadOptions
+        {
+            MaxFileBytes = options.MaxFileBytes,
+            MaxDepth = options.MaxDepth
+        };
+
+        var content = LocalizationFileReader.ReadText(sourceFilePath, readOptions);
+
+        if (!content.Success)
+        {
+            return LocalizationWriteContentResult.Fail(content.ErrorMessage ?? "JSON dosyası okunamadı.");
+        }
+
+        try
+        {
+            var root = JsonNode.Parse(
+                content.Text!,
+                nodeOptions: null,
+                documentOptions: new JsonDocumentOptions
+                {
+                    MaxDepth = options.MaxDepth,
+                    CommentHandling = JsonCommentHandling.Disallow,
+                    AllowTrailingCommas = false
+                });
+
+            if (root is null)
+            {
+                return LocalizationWriteContentResult.Fail("JSON kök değeri boş; yazma yapılmadı.");
+            }
+
+            var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var translation in translations)
+            {
+                if (string.IsNullOrWhiteSpace(translation.Key))
+                {
+                    return LocalizationWriteContentResult.Fail("Çeviri anahtarı boş olamaz.");
+                }
+
+                if (!seenKeys.Add(translation.Key))
+                {
+                    return LocalizationWriteContentResult.Fail(
+                        $"Aynı JSON Pointer birden fazla kez yazılmak isteniyor: '{translation.Key}'.");
+                }
+
+                if (!TryResolvePointer(root, translation.Key, out var node, out var resolveError))
+                {
+                    return LocalizationWriteContentResult.Fail(resolveError!);
+                }
+
+                if (node is not JsonValue value || !value.TryGetValue<string>(out var currentText))
+                {
+                    return LocalizationWriteContentResult.Fail(
+                        $"'{translation.Key}' konumu string değer değil; yazma reddedildi.");
+                }
+
+                // Kaynak metin önizlemeden sonra değişmişse yanlış yere yazmayı engelle.
+                if (!string.Equals(currentText, translation.SourceText, StringComparison.Ordinal))
+                {
+                    return LocalizationWriteContentResult.Fail(
+                        $"'{translation.Key}' kaynak metni değişmiş; yazma reddedildi.");
+                }
+
+                if (node.Parent is null)
+                {
+                    return LocalizationWriteContentResult.Fail("Kök JSON değeri yazılamaz.");
+                }
+
+                node.ReplaceWith(JsonValue.Create(translation.Translation));
+            }
+
+            // Girdi dosyası çok satırlıysa okunabilir biçimi korumaya çalış.
+            var writeIndented = content.Text!.Contains('\n', StringComparison.Ordinal);
+            var json = root.ToJsonString(new JsonSerializerOptions
+            {
+                WriteIndented = writeIndented,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+
+            return LocalizationWriteContentResult.Ok(json);
+        }
+        catch (JsonException ex)
+        {
+            return LocalizationWriteContentResult.Fail($"JSON yazma içeriği üretilemedi: {ex.Message}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return LocalizationWriteContentResult.Fail($"JSON yazma içeriği üretilemedi: {ex.Message}");
+        }
+    }
+
+    /// <summary>RFC 6901 JSON Pointer'ı çözer; yalnızca mevcut string düğümlerine yazmaya izin verir.</summary>
+    private static bool TryResolvePointer(
+        JsonNode root,
+        string pointer,
+        out JsonNode? node,
+        out string? error)
+    {
+        node = root;
+        error = null;
+
+        if (string.Equals(pointer, "(kök)", StringComparison.Ordinal) || pointer.Length == 0)
+        {
+            error = "Kök JSON değeri yazılamaz.";
+            return false;
+        }
+
+        if (pointer[0] != '/')
+        {
+            error = $"Geçersiz JSON Pointer: '{pointer}'.";
+            return false;
+        }
+
+        foreach (var rawSegment in pointer.Split('/').Skip(1))
+        {
+            var segment = rawSegment.Replace("~1", "/").Replace("~0", "~");
+
+            if (node is JsonObject jsonObject)
+            {
+                if (!jsonObject.TryGetPropertyValue(segment, out node) || node is null)
+                {
+                    error = $"JSON Pointer bulunamadı: '{pointer}'.";
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (node is JsonArray jsonArray)
+            {
+                if (!int.TryParse(segment, NumberStyles.None, CultureInfo.InvariantCulture, out var index)
+                    || index < 0
+                    || index >= jsonArray.Count)
+                {
+                    error = $"JSON Pointer dizi indeksi geçersiz: '{pointer}'.";
+                    return false;
+                }
+
+                node = jsonArray[index];
+
+                if (node is null)
+                {
+                    error = $"JSON Pointer null değere işaret ediyor: '{pointer}'.";
+                    return false;
+                }
+
+                continue;
+            }
+
+            error = $"JSON Pointer bir nesne/dizi üzerinden geçmiyor: '{pointer}'.";
+            return false;
+        }
+
+        return true;
     }
 
     private static void Walk(
