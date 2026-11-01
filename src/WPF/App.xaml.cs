@@ -96,8 +96,9 @@ public partial class App : Application
                     services.AddSingleton<LocalizationWriteOptions>(_ => new LocalizationWriteOptions());
                     services.AddSingleton<ILocalizationWriteService, LocalizationWriteService>();
 
-                    // Çeviri motoru ve güvenli JSON çalışma günlüğü (DB migration gerekmez).
+                    // Çeviri motoru ve güvenli JSON çalışma günlüğü.
                     services.AddSingleton<TranslationRunJournalStore>();
+                    services.AddSingleton<ITranslationMemory, TranslationMemoryService>();
                     services.AddSingleton<ITranslationEngine, TranslationEngine>();
 
                     services.AddSingleton<CatalogViewModel>();

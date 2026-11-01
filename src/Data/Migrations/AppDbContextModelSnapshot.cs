@@ -608,8 +608,18 @@ namespace GameLanguageExplorer.Data.Migrations
                     b.Property<DateTime?>("LastUsedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SourceLanguage")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SourceText")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetLanguage")
+                        .IsRequired()
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("TargetText")
@@ -621,7 +631,7 @@ namespace GameLanguageExplorer.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SourceText");
+                    b.HasIndex("SourceText", "SourceLanguage", "TargetLanguage");
 
                     b.ToTable("TranslationMemoryEntries");
                 });

@@ -140,7 +140,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<TranslationMemoryEntry>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.SourceText);
+            entity.Property(e => e.SourceLanguage).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.TargetLanguage).IsRequired().HasMaxLength(32);
+            entity.HasIndex(e => new { e.SourceText, e.SourceLanguage, e.TargetLanguage });
         });
 
         modelBuilder.Entity<BackupRecord>(entity =>

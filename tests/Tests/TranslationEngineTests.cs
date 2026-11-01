@@ -1,8 +1,10 @@
 namespace GameLanguageExplorer.Tests;
 
 using System.IO;
+using GameLanguageExplorer.Core.Entities;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
 using GameLanguageExplorer.Core.Services.Translation;
+using GameLanguageExplorer.Data.Services;
 
 public class TranslationEngineTests
 {
@@ -115,6 +117,78 @@ public class TranslationEngineTests
                 .ToArray(),
             Duration = TimeSpan.FromMilliseconds(5)
         }));
+    }
+
+    [Fact]
+    public async Task TranslationMemory_ExactMatch_IsReusedWithoutProviderCall()
+    {
+        using var database = new TempDatabase();
+        var (tree, path, sha) = await CreateSourceAsync();
+        using var _ = tree;
+        using var journal = new JournalScope();
+
+        using (var context = database.CreateContext())
+        {
+            context.TranslationMemoryEntries.Add(new TranslationMemoryEntry
+            {
+                SourceText = "Play",
+                TargetText = "Oyna",
+                SourceLanguage = "English",
+                TargetLanguage = "Turkish",
+                UsageCount = 1
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var provider = new StubProvider((_, _, _) =>
+            throw new InvalidOperationException("Bellek eşleşmesinde sağlayıcı çağrılmamalıydı."));
+
+        var engine = new TranslationEngine(
+            journal.Store,
+            new TranslationMemoryService(database.CreateFactory()));
+
+        var result = await engine.RunAsync(
+            Request(path, sha, new[] { Entry("ui.play", "Play") }),
+            provider);
+
+        Assert.Equal(TranslationRunStatus.Completed, result.Status);
+        Assert.Equal(0, provider.Calls);
+        Assert.Single(result.Units);
+        Assert.Equal(TranslationUnitStatus.Reused, result.Units[0].Status);
+        Assert.Equal("Oyna", result.Units[0].Translation);
+
+        using var readContext = database.CreateContext();
+        var memory = readContext.TranslationMemoryEntries.Single();
+        Assert.Equal(2, memory.UsageCount);
+        Assert.NotNull(memory.LastUsedAt);
+    }
+
+    [Fact]
+    public async Task TranslationMemory_SuccessfulTranslation_IsSaved()
+    {
+        using var database = new TempDatabase();
+        var (tree, path, sha) = await CreateSourceAsync();
+        using var _ = tree;
+        using var journal = new JournalScope();
+
+        var engine = new TranslationEngine(
+            journal.Store,
+            new TranslationMemoryService(database.CreateFactory()));
+
+        var result = await engine.RunAsync(
+            Request(path, sha, new[] { Entry("ui.play", "Play") }),
+            SuccessProvider());
+
+        Assert.Equal(TranslationRunStatus.Completed, result.Status);
+        Assert.Equal(TranslationUnitStatus.Candidate, result.Units[0].Status);
+
+        using var readContext = database.CreateContext();
+        var memory = readContext.TranslationMemoryEntries.Single();
+        Assert.Equal("Play", memory.SourceText);
+        Assert.Equal("Çeviri: Play", memory.TargetText);
+        Assert.Equal("English", memory.SourceLanguage);
+        Assert.Equal("Turkish", memory.TargetLanguage);
+        Assert.Equal(1, memory.UsageCount);
     }
 
     [Fact]

@@ -108,6 +108,7 @@ Salt okunur önizleme için kayıtlı adaptörler:
 - Sağlayıcı yanıtı JSON sözleşmesiyle doğrulanır; eksik/bozuk yanıtlar güvenli biçimde raporlanır.
 - Yer tutucular maskelenir ve çeviri sonrası geri yüklenir.
 - Kalite/terminoloji politikası ve yerleşik oyun sözlüğü uygulanır; kullanıcı sözlüğü için motor sözleşmesi hazırdır ancak arayüze bağlı değildir.
+- AI çağrısından önce `TranslationMemoryEntry` tablosunda kaynak metin + kaynak dil + hedef dil tam eşleşmesi aranır; eşleşme `Yeniden kullanıldı` durumuyla ve sağlayıcı çağrılmadan kullanılır. Başarılı yeni çeviriler belleğe yazılır.
 - Sonuçlar `Aday`, `İnceleme`, `Başarısız`, `Yeniden kullanıldı` ve `Atlandı` durumlarıyla gösterilir.
 - Çalışma günlüğü JSON olarak `%LOCALAPPDATA%\GameLanguageExplorer\translation-runs` altında tutulur.
 - Günlük atomik yazılır; bozuk günlük sessizce sıfırlanmaz.
@@ -139,12 +140,12 @@ Salt okunur önizleme için kayıtlı adaptörler:
   - Dil dosyaları: `DiscoveredFile`, `FileFormat`, `FormatEvidence`
   - Yerelleştirme: `LocalizationProject`, `LocalizationEntry`, `GlossaryTerm`, `TranslationMemoryEntry`
   - Diğer: `BackupRecord`, `PluginRegistration`
-- `BackupRecord` güvenli yazma servisi tarafından kullanılır. `TranslationMemoryEntry`, `GlossaryTerm` ve `PluginRegistration` tabloları şema olarak hazırdır; ilgili iş akışlarının bir kısmı henüz bağlı değildir.
+- `BackupRecord` güvenli yazma servisi tarafından, `TranslationMemoryEntry` ise çeviri motoru tarafından kullanılır. `GlossaryTerm` ve `PluginRegistration` tabloları şema olarak hazırdır; ilgili iş akışlarının bir kısmı henüz bağlı değildir.
 
 ### 9. Test ve Doğrulama
 
 - xUnit tabanlı birim ve entegrasyon testleri.
-- Son doğrulanan durum: **615 test başarılı**, 0 başarısız, 0 atlanan.
+- Son doğrulanan durum: **617 test başarılı**, 0 başarısız, 0 atlanan.
 - `scripts/validate-project.ps1` salt okunur doğrulama yapar:
   - `dotnet build`
   - `dotnet test`
@@ -255,7 +256,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 | Çeviri dışa aktarma | ✅ Çalışıyor | JSON/CSV/PO; yeni dosya, yer tutucu uyarıları |
 | SQLite şeması ve migration’lar | ✅ Çalışıyor | Başlangıçta otomatik migration |
 | Yan yana editör | ✅ Çalışıyor | JSON düzenleme; diğer formatlar salt okunur |
-| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 615/615 test |
+| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 617/617 test |
 
 > WPF ekranlarının tamamı otomatik UI testleriyle kapsanmaz; build/test sonuçları iş mantığını doğrular, görsel akış manuel kontrol gerektirir.
 
@@ -284,7 +285,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 ### Çeviri ve veri
 
 - AI çeviri ekranı sonuçları yalnızca kullanıcı onayıyla JSON dosyasına yazılabilir; diğer formatlarda yazma yoktur.
-- `TranslationMemoryEntry` ve `GlossaryTerm` tabloları çeviri akışına tam bağlı değil; şu an dosya tabanlı günlük ve yerleşik sözlük kullanılıyor.
+- `GlossaryTerm` tablosu çeviri akışına tam bağlı değil; çeviri belleği tam eşleşmeli olarak çalışıyor, dosya tabanlı günlük ve yerleşik sözlük de kullanılmaya devam ediyor.
 - Sağlayıcı profili/yönetim ekranı ve API anahtarı saklama arayüzü yok; anahtar ortam değişkeninden okunur.
 - Tam katalog senkronizasyonu ve büyük dosya önizlemesi için ayrıntılı ilerleme/iptal deneyimi sınırlı.
 

@@ -13,10 +13,14 @@ using GameLanguageExplorer.Core.Services.Localization.Preview;
 public sealed class TranslationEngine : ITranslationEngine
 {
     private readonly TranslationRunJournalStore _journalStore;
+    private readonly ITranslationMemory? _translationMemory;
 
-    public TranslationEngine(TranslationRunJournalStore? journalStore = null)
+    public TranslationEngine(
+        TranslationRunJournalStore? journalStore = null,
+        ITranslationMemory? translationMemory = null)
     {
         _journalStore = journalStore ?? new TranslationRunJournalStore();
+        _translationMemory = translationMemory;
     }
 
     public async Task<TranslationRunResult> RunAsync(
@@ -170,6 +174,8 @@ public sealed class TranslationEngine : ITranslationEngine
         }
 
         PropagateGroupResults(groups, warnings);
+        await ApplyTranslationMemoryAsync(plans, normalizedRequest, warnings, cancellationToken)
+            .ConfigureAwait(false);
 
         var workItems = BuildWorkItems(groups, request, warnings);
         var batchOptions = request.Options;
@@ -336,6 +342,12 @@ public sealed class TranslationEngine : ITranslationEngine
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             warnings.Add("Son çalışma durumu günlüğe yazılamadı: " + exception.Message);
+        }
+
+        if (!cancelled && failureKind == TranslationRunFailureKind.None)
+        {
+            await SaveTranslationMemoryAsync(finalUnits, normalizedRequest, warnings)
+                .ConfigureAwait(false);
         }
 
         var metrics = BuildMetrics(
@@ -568,6 +580,115 @@ public sealed class TranslationEngine : ITranslationEngine
             string.Join("\u001E", entry.Flags.OrderBy(flag => flag, StringComparer.Ordinal)));
 
         return HashText(material);
+    }
+
+    /// <summary>
+    /// AI çağrısından önce tam eşleşmeli çeviri belleğini uygular. Sonuçlar yalnızca
+    /// kalite kontrolünden geçen kayıtlar için <see cref="TranslationUnitStatus.Reused"/> olur.
+    /// </summary>
+    private async Task ApplyTranslationMemoryAsync(
+        IReadOnlyList<EntryPlan> plans,
+        TranslationEngineRequest request,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (_translationMemory is null)
+        {
+            return;
+        }
+
+        var matches = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        try
+        {
+            foreach (var plan in plans)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!plan.IsEligible
+                    || plan.Result is not null
+                    || string.IsNullOrWhiteSpace(plan.Entry.SourceText))
+                {
+                    continue;
+                }
+
+                var source = plan.Entry.SourceText;
+
+                if (!matches.TryGetValue(source, out var translation))
+                {
+                    translation = await _translationMemory.FindExactAsync(
+                            source,
+                            request.SourceLanguage,
+                            request.TargetLanguage,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    matches[source] = translation;
+                }
+
+                if (string.IsNullOrWhiteSpace(translation))
+                {
+                    continue;
+                }
+
+                var acceptance = TranslationAcceptancePolicy.Evaluate(source, translation);
+
+                if (acceptance.Status != TranslationAcceptanceStatus.Candidate)
+                {
+                    continue;
+                }
+
+                plan.Result = CreatePlanResult(
+                    plan,
+                    TranslationUnitStatus.Reused,
+                    "Çeviri belleğindeki tam eşleşme kullanıldı; sağlayıcı çağrılmadı.",
+                    attempts: 0,
+                    acceptance.TranslationText,
+                    acceptance.Findings);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            warnings.Add("Çeviri belleği okunamadı; sağlayıcı ile devam edildi: " + exception.Message);
+        }
+    }
+
+    /// <summary>Otomatik kabul edilen yeni çevirileri, yinelenen kayıt oluşturmadan belleğe yazar.</summary>
+    private async Task SaveTranslationMemoryAsync(
+        IReadOnlyList<TranslationUnitResult> units,
+        TranslationEngineRequest request,
+        List<string> warnings)
+    {
+        if (_translationMemory is null)
+        {
+            return;
+        }
+
+        var savedSources = new HashSet<string>(StringComparer.Ordinal);
+
+        try
+        {
+            foreach (var unit in units)
+            {
+                if (unit.Status != TranslationUnitStatus.Candidate
+                    || string.IsNullOrWhiteSpace(unit.Translation)
+                    || !savedSources.Add(unit.SourceText))
+                {
+                    continue;
+                }
+
+                await _translationMemory.SaveAsync(
+                        unit.SourceText,
+                        unit.Translation,
+                        request.SourceLanguage,
+                        request.TargetLanguage,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            warnings.Add("Yeni çeviri belleğe yazılamadı: " + exception.Message);
+        }
     }
 
     private static List<EntryPlan> BuildPlans(
