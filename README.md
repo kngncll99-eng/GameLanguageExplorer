@@ -2,7 +2,7 @@
 
 Game Language Explorer, Windows 10/11 üzerinde çalışan; oyunları tek bir katalogda toplamayı, kurulu oyunları salt okunur biçimde keşfetmeyi ve oyunların yerelleştirme dosyalarını güvenli biçimde incelemeyi amaçlayan bir WPF masaüstü uygulamasıdır.
 
-> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/Epic/GOG/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü, JSON/CSV/PO/INI için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” ve JSON/CSV/PO dışa aktarma komutları, yan yana yerelleştirme editörü ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. JSON/CSV/PO/INI dışı formatlarda yazma, yedekleme ekranı ve eklenti sistemi henüz yok.
+> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/Epic/GOG/Ubisoft/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü, JSON/CSV/PO/INI için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” ve JSON/CSV/PO dışa aktarma komutları, yan yana yerelleştirme editörü ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. JSON/CSV/PO/INI dışı formatlarda yazma, yedekleme ekranı ve eklenti sistemi henüz yok.
 
 ## Amaç ve Hedef
 
@@ -59,10 +59,14 @@ Steam dışında katalog sağlayıcısı henüz yoktur.
   - `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games` ve `HKLM\SOFTWARE\GOG.com\Games` kayıt defteri anahtarlarını okuma.
   - Bilinen GOG klasörlerindeki oyunları ve `gameInfo.igd` / `goggame-*.info` metadata dosyalarını tarama.
   - Oyun adı, kurulum klasörü ve mümkünse GOG oyun ID’sini çıkarma.
+- **Ubisoft Connect (salt okunur):**
+  - `HKLM\SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs` ve `HKLM\SOFTWARE\Ubisoft\Launcher\Installs` anahtarlarını okuma.
+  - `%LOCALAPPDATA%\Ubisoft Game Launcher` ve `%PROGRAMDATA%\Ubisoft` config/cache JSON dosyalarını tarama.
+  - Oyun klasörlerindeki `uplay_install.manifest` / `uplay_install.state` metadata dosyalarından ad, ID ve çalıştırılabilir dosya çıkarma.
 - **Manuel klasör:** Kullanıcının seçtiği oyun klasörünü `Manual` kaynağıyla ekleme.
 - Kaynağa göre filtreleme ve tarama sonucu özeti.
 - Eksik/erişilemeyen klasörlerde mevcut kayıtları koruma; başarısız veya kısmi taramada kayıt silmeme.
-- Steam, Epic ve GOG dışındaki mağazalar (`Ubisoft`, `EA`, `Xbox`) yalnızca “planlandı” olarak listelenir; taramaya katılmaz.
+- Steam, Epic, GOG ve Ubisoft dışındaki mağazalar (`EA`, `Xbox`) yalnızca “planlandı” olarak listelenir; taramaya katılmaz.
 
 ### 4. Dil Dosyası Keşfi
 
@@ -153,7 +157,7 @@ Salt okunur önizleme için kayıtlı adaptörler:
 ### 9. Test ve Doğrulama
 
 - xUnit tabanlı birim ve entegrasyon testleri.
-- Son doğrulanan durum: **626 test başarılı**, 0 başarısız, 0 atlanan.
+- Son doğrulanan durum: **629 test başarılı**, 0 başarısız, 0 atlanan.
 - `scripts/validate-project.ps1` salt okunur doğrulama yapar:
   - `dotnet build`
   - `dotnet test`
@@ -230,7 +234,7 @@ GameLanguageExplorer.slnx
 | `src/WPF/Views/EditorView.xaml` | Sanallaştırılmış kaynak/çeviri editörü |
 | `src/Data/AppDbContext.cs` | EF Core DbSet’leri ve model yapılandırması |
 | `src/Data/Services/CatalogSyncService.cs` | Katalog kayıtlarının eklenmesi/güncellenmesi |
-| `src/Data/Services/InstalledGameScanService.cs` | Steam/Epic/GOG/manuel kurulum kayıtlarının taranması |
+| `src/Data/Services/InstalledGameScanService.cs` | Steam/Epic/GOG/Ubisoft/manuel kurulum kayıtlarının taranması |
 | `src/Data/Services/LocalizationFileScanService.cs` | Dil dosyası adaylarının salt okunur keşfi |
 | `src/Data/Services/LocalizationPreviewService.cs` | Yol güvenliği, adaptör seçimi ve önizleme |
 | `src/Data/Services/LocalizationWriteService.cs` | Yedek, geçici dosya, SHA-256 doğrulama ve atomik yazma |
@@ -256,6 +260,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 | Steam kurulu oyun taraması | ✅ Çalışıyor | Salt okunur manifest taraması |
 | Epic kurulu oyun taraması | ✅ Çalışıyor | Salt okunur `.item` manifest taraması |
 | GOG kurulu oyun taraması | ✅ Çalışıyor | Registry + `gameInfo.igd` (salt okunur) |
+| Ubisoft kurulu oyun taraması | ✅ Çalışıyor | Registry + config/cache + `uplay_install` (salt okunur) |
 | Manuel oyun klasörü ekleme | ✅ Çalışıyor | `Manual` kaynağı, doğrulanmamış ad |
 | Dil dosyası keşfi | ✅ Çalışıyor | İlerleme, iptal, yol güvenliği, SHA-256 |
 | JSON içerik/güven kontrolü | ✅ Çalışıyor | Sınırlı, salt okunur, güvenli hata durumları |
@@ -266,7 +271,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 | Çeviri dışa aktarma | ✅ Çalışıyor | JSON/CSV/PO; yeni dosya, yer tutucu uyarıları |
 | SQLite şeması ve migration’lar | ✅ Çalışıyor | Başlangıçta otomatik migration |
 | Yan yana editör | ✅ Çalışıyor | JSON düzenleme; diğer formatlar salt okunur |
-| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 626/626 test |
+| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 629/629 test |
 
 > WPF ekranlarının tamamı otomatik UI testleriyle kapsanmaz; build/test sonuçları iş mantığını doğrular, görsel akış manuel kontrol gerektirir.
 
@@ -289,7 +294,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 ### Mağaza ve platform kapsamı
 
 - Steam dışında katalog sağlayıcısı yok.
-- Ubisoft Connect, EA App ve Xbox için kurulu oyun sağlayıcısı yok.
+- EA App ve Xbox için kurulu oyun sağlayıcısı yok.
 - Steam manifesti oyun/araç ayrımı yapmadığı için dağıtım paketleri de listelenebilir.
 
 ### Çeviri ve veri
@@ -312,7 +317,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 2. **Editör geliştirmeleri:** Arama/filtreleme, toplu düzenleme ve değişiklik geçmişi eklemek.
 3. **Dışa aktarma geliştirmeleri:** XLIFF/XML gibi ek formatlar ve dışa aktarma şablonları eklemek.
 4. **Format kapsamını genişletme:** Öncelik sırasıyla `MO`, `YAML`, `TXT`, `STRINGS`, `LOC` ve Unreal `.locres` araştırması.
-5. **Mağaza sağlayıcıları:** Ubisoft, EA ve Xbox için salt okunur kurulum tespiti.
+5. **Mağaza sağlayıcıları:** EA ve Xbox için salt okunur kurulum tespiti.
 6. **Çeviri altyapısını tamamlama:** Çeviri belleği ve sözlük tablolarını akışa bağlamak; sağlayıcı profili ve güvenli anahtar yönetimi eklemek.
 7. **Eklenti sistemi:** `IGameFormatPlugin` için yükleme, sürüm uyumluluğu ve güvenlik sınırları.
 8. **Performans ve UX:** Katalog senkronizasyonu, büyük dosya önizlemesi ve uzun listeler için ilerleme, iptal ve sanallaştırma.
