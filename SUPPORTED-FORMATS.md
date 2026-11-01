@@ -2,9 +2,9 @@
 
 ## Aşama 3: Okuma (ayrıştırma) desteği
 
-Bu aşamada **JSON, XML, CSV ve TSV** dosyaları salt okunur olarak ayrıştırılabilir.
-**JSON ve CSV için güvenli yazma altyapısı** vardır; diğer formatlarda yazma desteği yoktur.
-JSON ve CSV adaptörlerinde `SupportsWrite=true`, diğer adaptörlerde `false` değerindedir.
+Bu aşamada **JSON, XML, CSV/TSV, PO/POT, INI ve LocresCSV** dosyaları ayrıştırılabilir.
+**JSON, CSV ve PO için güvenli yazma altyapısı** vardır; diğer formatlarda yazma desteği yoktur.
+JSON, CSV ve PO adaptörlerinde `SupportsWrite=true`, diğer adaptörlerde `false` değerindedir.
 
 | Format | Uzantılar | Keşif | Okuma (önizleme) | Yazma | Notlar |
 |--------|-----------|-------|------------------|-------|--------|
@@ -12,7 +12,7 @@ JSON ve CSV adaptörlerinde `SupportsWrite=true`, diğer adaptörlerde `false` d
 | XML | .xml | ✅ | ✅ | ❌ | Element metni + metin attribute; DTD kapalı (XXE yok) |
 | CSV | .csv | ✅ | ✅ | ✅* | Ayraç otomatik (virgül, noktalı virgül, sekme, pipe), RFC 4180 tırnakları. *Yalnızca çeviri sütunu |
 | TSV | .tsv | ✅ | ✅ | ❌ | CSV ile aynı motor, ayraç sabit sekme |
-| PO | .po | ✅ | ✅ | ❌ | msgctxt/çoğul/fuzzy/mevcut çeviri |
+| PO | .po | ✅ | ✅ | ✅* | msgctxt/çoğul/fuzzy/mevcut çeviri. *Yalnızca msgstr |
 | POT | .pot | ✅ | ✅ | ❌ | Şablon; boş msgstr normaldir |
 | INI | .ini | ✅ | ✅ | ❌ | [Bölüm] + ilk `=`; bölüm bağlamı korunur |
 | LocresCSV | .csv | ✅ | ✅ | ❌ | `key,source,Translation` başlık şeması; sütun sırası serbest, boş `Translation` = çeviri yok |
@@ -81,9 +81,9 @@ değiştirilmez veya yeniden serileştirilmez.
   sinyalleri kullanılır.
 - Yol, URL, GUID ve teknik anahtar benzeri dizeler çevrilebilir metin sayılmaz.
 
-## Güvenli yazma (JSON/CSV)
+## Güvenli yazma (JSON/CSV/PO)
 
-JSON ve CSV için yazma akışı şu sırayla çalışır:
+JSON, CSV ve PO için yazma akışı şu sırayla çalışır:
 
 1. Orijinal dosyanın SHA-256 değeri doğrulanır.
 2. Dosya yedeklenir ve `BackupRecord` tablosuna kaydedilir.
@@ -94,7 +94,9 @@ JSON ve CSV için yazma akışı şu sırayla çalışır:
 
 JSON'da yalnızca mevcut string değerleri JSON Pointer ile değiştirilir. CSV'de yalnızca
 başlıkta tanınan çeviri sütunu (`translation`, `target`, `translated` vb.) güncellenir;
-diğer sütunlar, satır sırası ve ayraç yapısı korunur. Sayı/boolean/null değerlerine,
+diğer sütunlar, satır sırası ve ayraç yapısı korunur. PO'da yalnızca `msgstr` /
+`msgstr[n]` satırları yamanır; yorumlar, `msgid`, `msgctxt`, boş satırlar ve kayıt sırası
+korunur. Değişen PO kaydının `fuzzy` işareti kaldırılır. Sayı/boolean/null değerlerine,
 bilinmeyen yollara veya önizlemeden sonra değişmiş kaynak metinlere yazılmaz.
 AI Çeviri ekranındaki “Dosyaya Yaz” komutu yalnızca kullanıcı onayından sonra çalışır;
 diğer formatlarda yazma komutu pasiftir.
@@ -105,7 +107,7 @@ diğer formatlarda yazma komutu pasiftir.
 |------|----------|
 | Konum | JSON Pointer (`/a/b/0`), XPath benzeri (`/root/item[2]/@name`), CSV `satır 3 / text` |
 | Çevrilebilirlik | `Translatable`, `Ambiguous` (bağlam belirsiz), `Skipped` (neden yazılır) |
-| Yapı korunumu | Okuma salt okunur; JSON/CSV güvenli yazma geçici dosya + atomik taşıma kullanır |
+| Yapı korunumu | Okuma salt okunur; JSON/CSV/PO güvenli yazma geçici dosya + atomik taşıma kullanır |
 | Değişkenler | `{ad}`, `{0}`, `%s`, `%d`, `\n`, `<b>`, `[color=red]` tanınır ve imza üretilir |
 | PO çoğul | `msgid_plural` + her `msgstr[n]` **ayrı kayıt** (`PluralIndex/PluralCount/PluralSourceText`); birleştirilmez |
 | PO fuzzy | `#, fuzzy` → durum `Belirsiz` + `Flags=["fuzzy"]`; kayıt atlanmaz |
@@ -122,9 +124,9 @@ diğer formatlarda yazma komutu pasiftir.
 
 | Format | Durum |
 |--------|-------|
-| PO/POT/MO okuma | ❌ Planlanmadı |
+| MO okuma | ❌ Planlanmadı |
 | INI/YAML/STRINGS/LOC okuma | ❌ Planlanmadı |
 | Unreal `.locres` / `.uasset` ayrıştırma | ❌ Planlanmadı |
 | Paket açma (.pak, .bundle, .archive) | ❌ Planlanmadı |
-| **Yazma / geri yazma** | ✅ JSON ve CSV güvenli yazma altyapısı; diğer formatlar ❌ |
+| **Yazma / geri yazma** | ✅ JSON, CSV ve PO güvenli yazma altyapısı; diğer formatlar ❌ |
 

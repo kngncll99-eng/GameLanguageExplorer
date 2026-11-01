@@ -1,7 +1,7 @@
 namespace GameLanguageExplorer.Core.Services.Localization.Preview;
 
 /// <summary>Yazılacak tek bir çeviri kaydı.</summary>
-/// <param name="Key">Adaptörün ürettiği yapısal anahtar (JSON Pointer).</param>
+/// <param name="Key">Adaptörün ürettiği yapısal anahtar (JSON Pointer, CSV satır/sütun, PO msgid anahtarı).</param>
 /// <param name="SourceText">Yazma sırasında dosyada beklenen kaynak metin.</param>
 /// <param name="Translation">Kaynak metnin yerine yazılacak çeviri.</param>
 public sealed record LocalizationWriteTranslation(

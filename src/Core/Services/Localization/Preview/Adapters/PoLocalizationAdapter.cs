@@ -10,7 +10,12 @@ internal sealed class PoMessage
     public string? Id { get; set; }
     public string? IdPlural { get; set; }
     public string? Str { get; set; }
+
+    /// <summary>Tekil <c>msgstr</c> satır numarası (1 tabanlı); yoksa -1.</summary>
+    public int StrLine { get; set; } = -1;
+
     public List<PoPluralForm> PluralForms { get; } = new();
+    public List<int> FlagLines { get; } = new();
     public List<string> Flags { get; } = new();
     public List<string> References { get; } = new();
     public bool IsObsolete { get; set; }
@@ -60,6 +65,7 @@ internal static class PoDocumentParser
         var normalizedText = text.Replace("\r\n", "\n").Replace('\r', '\n');
         var pendingFlags = new List<string>();
         var pendingReferences = new List<string>();
+        var pendingFlagLines = new List<int>();
 
         PoMessage? current = null;
         var lastField = PoField.None;
@@ -84,8 +90,10 @@ internal static class PoDocumentParser
             }
 
             current.References.AddRange(pendingReferences);
+            current.FlagLines.AddRange(pendingFlagLines);
             pendingFlags.Clear();
             pendingReferences.Clear();
+            pendingFlagLines.Clear();
         }
 
         void MarkError(string reason)
@@ -224,7 +232,7 @@ internal static class PoDocumentParser
             }
             else if (work[0] == '#')
             {
-                HandleComment(work, pendingFlags, pendingReferences);
+                HandleComment(work, pendingFlags, pendingReferences, pendingFlagLines, lineNumber);
                 continue;
             }
 
@@ -287,6 +295,7 @@ internal static class PoDocumentParser
 
                 case "msgstr":
                     current!.Str = value;
+                    current.StrLine = lineNumber;
                     lastField = PoField.Str;
                     break;
 
@@ -306,7 +315,12 @@ internal static class PoDocumentParser
         return result;
     }
 
-    private static void HandleComment(string comment, List<string> flags, List<string> references)
+    private static void HandleComment(
+        string comment,
+        List<string> flags,
+        List<string> references,
+        List<int> flagLines,
+        int lineNumber)
     {
         if (comment.StartsWith("#,", StringComparison.Ordinal))
         {
@@ -316,6 +330,11 @@ internal static class PoDocumentParser
                 {
                     flags.Add(part);
                 }
+            }
+
+            if (!flagLines.Contains(lineNumber))
+            {
+                flagLines.Add(lineNumber);
             }
 
             return;
@@ -543,7 +562,7 @@ internal static class PoDocumentParser
 
 /// <summary>
 /// PO/POT ortak adaptörü: aynı ayrıştırıcıyı kullanır, yalnızca format anahtarı ve
-/// şablon anlamı farklıdır. <b>Yazma desteği yoktur.</b>
+/// şablon anlamı farklıdır. <b>PO yazma desteği alt sınıfta açılır; POT salt okunurdur.</b>
 /// </summary>
 public abstract class PoLocalizationAdapterBase : GameLanguageExplorer.Core.Interfaces.ILocalizationFormatAdapter
 {
@@ -556,7 +575,7 @@ public abstract class PoLocalizationAdapterBase : GameLanguageExplorer.Core.Inte
 
     public bool SupportsRead => true;
 
-    public bool SupportsWrite => false;
+    public virtual bool SupportsWrite => false;
 
     public Task<LocalizationTextReadResult> ReadAsync(
         string filePath,
@@ -831,7 +850,7 @@ public abstract class PoLocalizationAdapterBase : GameLanguageExplorer.Core.Inte
     }
 
     /// <summary>Anahtar: <c>msgctxt + msgid</c>; satır sonları tek boşluğa indirilir.</summary>
-    private static string BuildKeyBase(PoMessage message)
+    internal static string BuildKeyBase(PoMessage message)
     {
         var id = NormalizeInline(message.Id);
 
@@ -876,7 +895,7 @@ public abstract class PoLocalizationAdapterBase : GameLanguageExplorer.Core.Inte
         return builder.ToString();
     }
 
-    private static string UniqueKey(string baseKey, HashSet<string> usedKeys)
+    internal static string UniqueKey(string baseKey, HashSet<string> usedKeys)
     {
         if (usedKeys.Add(baseKey))
         {
@@ -895,7 +914,7 @@ public abstract class PoLocalizationAdapterBase : GameLanguageExplorer.Core.Inte
 }
 
 /// <summary>GNU gettext <c>.po</c> ayrıştırıcısı (mevcut çeviriler dahil).</summary>
-public sealed class PoLocalizationAdapter : PoLocalizationAdapterBase
+public sealed class PoLocalizationAdapter : PoLocalizationAdapterBase, ILocalizationWritableFormatAdapter
 {
     public const string FormatKey = "PO";
 
@@ -905,7 +924,284 @@ public sealed class PoLocalizationAdapter : PoLocalizationAdapterBase
 
     public override string[] SupportedExtensions => new[] { ".po" };
 
+    public override bool SupportsWrite => true;
+
     protected override bool IsTemplate => false;
+
+    public Task<LocalizationWriteContentResult> BuildWriteContentAsync(
+        string sourceFilePath,
+        IReadOnlyList<LocalizationWriteTranslation> translations,
+        LocalizationFormatWriteOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => Task.Run(
+            () => BuildWriteContent(
+                sourceFilePath,
+                translations,
+                options ?? new LocalizationFormatWriteOptions()),
+            cancellationToken);
+
+    private static LocalizationWriteContentResult BuildWriteContent(
+        string sourceFilePath,
+        IReadOnlyList<LocalizationWriteTranslation> translations,
+        LocalizationFormatWriteOptions options)
+    {
+        if (translations.Count == 0)
+        {
+            return LocalizationWriteContentResult.Fail("Yazılacak çeviri kaydı yok.");
+        }
+
+        var content = LocalizationFileReader.ReadText(sourceFilePath, new LocalizationFormatReadOptions
+        {
+            MaxFileBytes = options.MaxFileBytes,
+            MaxDepth = options.MaxDepth
+        });
+
+        if (!content.Success)
+        {
+            return LocalizationWriteContentResult.Fail(content.ErrorMessage ?? "PO dosyası okunamadı.");
+        }
+
+        var parse = PoDocumentParser.Parse(content.Text!, int.MaxValue, CancellationToken.None);
+
+        if (parse.Messages.Count == 0)
+        {
+            return LocalizationWriteContentResult.Fail(
+                parse.SyntaxErrorCount > 0
+                    ? "PO dosyası ayrıştırılamadı; yazma reddedildi."
+                    : "PO dosyasında yazılabilir kayıt bulunamadı.");
+        }
+
+        var targets = BuildTargets(parse);
+        var lines = content.Text!.Split('\n').ToList();
+        var removedLines = new HashSet<int>();
+        var changedMessages = new HashSet<PoMessage>();
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        var applied = 0;
+
+        foreach (var translation in translations)
+        {
+            if (string.IsNullOrEmpty(translation.Key))
+            {
+                return LocalizationWriteContentResult.Fail("PO kayıt anahtarı boş olamaz.");
+            }
+
+            if (!seenKeys.Add(translation.Key))
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"Aynı PO kaydı birden fazla kez yazılmak isteniyor: '{translation.Key}'.");
+            }
+
+            if (!targets.TryGetValue(translation.Key, out var target))
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"PO kaydı bulunamadı: '{translation.Key}'.");
+            }
+
+            if (!string.Equals(target.SourceText, translation.SourceText, StringComparison.Ordinal))
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"'{translation.Key}' kaynak metni değişmiş; yazma reddedildi.");
+            }
+
+            var current = target.Form is null ? target.Message.Str ?? string.Empty : target.Form.Text;
+
+            if (string.Equals(current, translation.Translation, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (translation.Translation.Length == 0)
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"'{translation.Key}' için boş çeviri yazılamaz.");
+            }
+
+            if (target.StrLine <= 0 || target.StrLine > lines.Count)
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"'{translation.Key}' için msgstr satırı bulunamadı.");
+            }
+
+            var lineIndex = target.StrLine - 1;
+            lines[lineIndex] = ReplaceMsgstrLine(lines[lineIndex], target, translation.Translation);
+
+            var continuation = lineIndex + 1;
+            while (continuation < lines.Count && IsQuotedContinuation(lines[continuation]))
+            {
+                removedLines.Add(continuation);
+                continuation++;
+            }
+
+            changedMessages.Add(target.Message);
+            applied++;
+        }
+
+        if (applied == 0)
+        {
+            return LocalizationWriteContentResult.Ok(content.Text!);
+        }
+
+        // Yeni çeviri incelenmiş sayılır: fuzzy işaretini yalnızca değişen kayıtlardan kaldır.
+        foreach (var message in changedMessages)
+        {
+            foreach (var flagLine in message.FlagLines)
+            {
+                RemoveFuzzyFlag(lines, flagLine - 1, removedLines);
+            }
+        }
+
+        var output = new StringBuilder(content.Text.Length);
+        var firstWritten = true;
+
+        for (var index = 0; index < lines.Count; index++)
+        {
+            if (removedLines.Contains(index))
+            {
+                continue;
+            }
+
+            if (!firstWritten)
+            {
+                output.Append('\n');
+            }
+
+            output.Append(lines[index]);
+            firstWritten = false;
+        }
+
+        return LocalizationWriteContentResult.Ok(output.ToString());
+    }
+
+    /// <summary>
+    /// Okuma sırasındaki anahtar üretimini birebir yineler; böylece yinelenen msgid'lerde
+    /// <c>#2</c> sonekleri de doğru kayda bağlanır.
+    /// </summary>
+    private static Dictionary<string, PoWriteTarget> BuildTargets(PoParseResult parse)
+    {
+        var targets = new Dictionary<string, PoWriteTarget>(StringComparer.Ordinal);
+        var usedKeys = new HashSet<string>(StringComparer.Ordinal);
+        var headerEmitted = false;
+
+        foreach (var message in parse.Messages)
+        {
+            var isHeader = !headerEmitted
+                           && !message.IsMalformed
+                           && !message.IsObsolete
+                           && message.Context is null
+                           && message.Id is { Length: 0 };
+
+            if (isHeader)
+            {
+                headerEmitted = true;
+                UniqueKey("PO başlık kaydı", usedKeys);
+                continue;
+            }
+
+            var keyBase = BuildKeyBase(message);
+
+            if (message.IsMalformed
+                || message.IsObsolete
+                || string.IsNullOrEmpty(message.Id))
+            {
+                UniqueKey(keyBase, usedKeys);
+                continue;
+            }
+
+            if (message.PluralForms.Count > 0)
+            {
+                foreach (var form in message.PluralForms.OrderBy(f => f.Index))
+                {
+                    var key = UniqueKey($"{keyBase} [{form.Index}]", usedKeys);
+                    var source = form.Index == 0
+                        ? message.Id
+                        : message.IdPlural ?? message.Id;
+
+                    targets[key] = new PoWriteTarget(message, form, form.Line, source);
+                }
+
+                continue;
+            }
+
+            var singularKey = UniqueKey(keyBase, usedKeys);
+            targets[singularKey] = new PoWriteTarget(message, null, message.StrLine, message.Id);
+        }
+
+        return targets;
+    }
+
+
+
+
+    private static string ReplaceMsgstrLine(string line, PoWriteTarget target, string translation)
+    {
+        var ending = line.EndsWith('\r') ? "\r" : string.Empty;
+        var content = ending.Length == 0 ? line : line[..^1];
+        var trimmed = content.TrimStart();
+        var leading = content[..(content.Length - trimmed.Length)];
+        var directive = target.Form is null ? "msgstr" : $"msgstr[{target.Form.Index}]";
+
+        return leading + directive + " " + QuotePo(translation) + ending;
+    }
+
+    /// <summary>Bir önceki direktife ait tırnaklı devam satırı mı?</summary>
+    private static bool IsQuotedContinuation(string line)
+        => line.TrimStart().StartsWith('"');
+
+    /// <summary>
+    /// Değişen çevirinin fuzzy işaretini kaldırır; aynı satırdaki diğer flag'ler korunur.
+    /// </summary>
+    private static void RemoveFuzzyFlag(List<string> lines, int index, HashSet<int> removedLines)
+    {
+        if (index < 0 || index >= lines.Count || removedLines.Contains(index))
+        {
+            return;
+        }
+
+        var line = lines[index];
+        var ending = line.EndsWith('\r') ? "\r" : string.Empty;
+        var content = ending.Length == 0 ? line : line[..^1];
+        var trimmed = content.TrimStart();
+
+        if (!trimmed.StartsWith("#,", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var marker = content.IndexOf("#,", StringComparison.Ordinal);
+        var parts = content[(marker + 2)..]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (!parts.Any(part => string.Equals(part, "fuzzy", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var remaining = parts
+            .Where(part => !string.Equals(part, "fuzzy", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (remaining.Length == 0)
+        {
+            removedLines.Add(index);
+            return;
+        }
+
+        lines[index] = content[..(marker + 2)] + " " + string.Join(", ", remaining) + ending;
+    }
+
+    private static string QuotePo(string value)
+        => "\"" + value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal) + "\"";
+
+    private sealed record PoWriteTarget(
+        PoMessage Message,
+        PoPluralForm? Form,
+        int StrLine,
+        string SourceText);
 }
 
 /// <summary>
