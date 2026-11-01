@@ -192,35 +192,20 @@ public sealed class IniLocalizationAdapter : ILocalizationFormatAdapter, ILocali
         IReadOnlyList<LocalizationWriteTranslation> translations,
         LocalizationFormatWriteOptions? options = null,
         CancellationToken cancellationToken = default)
-        => Task.Run(
-            () => BuildWriteContent(
-                sourceFilePath,
-                translations,
-                options ?? new LocalizationFormatWriteOptions()),
+        => WritableLocalizationWriteSupport.BuildFromSourceAsync(
+            sourceFilePath,
+            translations,
+            options,
+            "INI",
+            (sourceText, writeOptions) => BuildWriteContent(sourceText, translations, writeOptions),
             cancellationToken);
 
     private static LocalizationWriteContentResult BuildWriteContent(
-        string sourceFilePath,
+        string sourceText,
         IReadOnlyList<LocalizationWriteTranslation> translations,
         LocalizationFormatWriteOptions options)
     {
-        if (translations.Count == 0)
-        {
-            return LocalizationWriteContentResult.Fail("Yazılacak çeviri kaydı yok.");
-        }
-
-        var content = LocalizationFileReader.ReadText(sourceFilePath, new LocalizationFormatReadOptions
-        {
-            MaxFileBytes = options.MaxFileBytes,
-            MaxDepth = options.MaxDepth
-        });
-
-        if (!content.Success)
-        {
-            return LocalizationWriteContentResult.Fail(content.ErrorMessage ?? "INI dosyası okunamadı.");
-        }
-
-        var lines = content.Text!.Split('\n').ToList();
+        var lines = sourceText.Split('\n').ToList();
         var targets = BuildTargets(lines);
         var applied = 0;
 
@@ -261,7 +246,7 @@ public sealed class IniLocalizationAdapter : ILocalizationFormatAdapter, ILocali
         }
 
         return applied == 0
-            ? LocalizationWriteContentResult.Ok(content.Text!)
+            ? LocalizationWriteContentResult.Ok(sourceText)
             : LocalizationWriteContentResult.Ok(string.Join("\n", lines));
     }
 

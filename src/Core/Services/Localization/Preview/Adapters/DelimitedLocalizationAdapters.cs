@@ -394,30 +394,20 @@ public sealed class CsvLocalizationAdapter : DelimitedLocalizationAdapterBase, I
         IReadOnlyList<LocalizationWriteTranslation> translations,
         LocalizationFormatWriteOptions? options = null,
         CancellationToken cancellationToken = default)
-        => Task.Run(
-            () => BuildWriteContent(
-                sourceFilePath,
-                translations,
-                options ?? new LocalizationFormatWriteOptions()),
+        => WritableLocalizationWriteSupport.BuildFromSourceAsync(
+            sourceFilePath,
+            translations,
+            options,
+            "CSV",
+            (sourceText, writeOptions) => BuildWriteContent(sourceText, translations, writeOptions),
             cancellationToken);
 
     private static LocalizationWriteContentResult BuildWriteContent(
-        string sourceFilePath,
+        string sourceText,
         IReadOnlyList<LocalizationWriteTranslation> translations,
         LocalizationFormatWriteOptions options)
     {
-        var content = LocalizationFileReader.ReadText(sourceFilePath, new LocalizationFormatReadOptions
-        {
-            MaxFileBytes = options.MaxFileBytes,
-            MaxDepth = options.MaxDepth
-        });
-
-        if (!content.Success)
-        {
-            return LocalizationWriteContentResult.Fail(content.ErrorMessage ?? "CSV dosyası okunamadı.");
-        }
-
-        var parse = DelimitedTextParser.Parse(content.Text!, null);
+        var parse = DelimitedTextParser.Parse(sourceText, null);
 
         if (!parse.IsWellFormed || parse.Rows.Count == 0)
         {
@@ -499,9 +489,9 @@ public sealed class CsvLocalizationAdapter : DelimitedLocalizationAdapterBase, I
                 "CSV çeviri sütununda güncellenecek kayıt bulunamadı.");
         }
 
-        var newline = content.Text!.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var keepTrailingNewline = content.Text.EndsWith("\n", StringComparison.Ordinal)
-                                  || content.Text.EndsWith("\r", StringComparison.Ordinal);
+        var newline = sourceText.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var keepTrailingNewline = sourceText.EndsWith("\n", StringComparison.Ordinal)
+                                  || sourceText.EndsWith("\r", StringComparison.Ordinal);
         var builder = new System.Text.StringBuilder();
 
         for (var rowIndex = 0; rowIndex < mutableRows.Count; rowIndex++)

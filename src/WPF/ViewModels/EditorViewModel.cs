@@ -137,18 +137,10 @@ public partial class EditorViewModel : ViewModelBase
         _writeService = writeService;
         _confirmationService = confirmationService;
 
-        var adapterInfo = previewService.GetAdapterInfo();
-        _previewableExtensions = adapterInfo
-            .SelectMany(adapter => adapter.Extensions)
-            .ToArray();
-        _writableExtensions = adapterInfo
-            .Where(adapter => adapter.SupportsWrite)
-            .SelectMany(adapter => adapter.Extensions)
-            .ToArray();
-        _writableFormatKeys = adapterInfo
-            .Where(adapter => adapter.SupportsWrite)
-            .Select(adapter => adapter.FormatName)
-            .ToArray();
+        var capabilities = LocalizationAdapterCapabilities.From(previewService.GetAdapterInfo());
+        _previewableExtensions = capabilities.PreviewableExtensions;
+        _writableExtensions = capabilities.WritableExtensions;
+        _writableFormatKeys = capabilities.WritableFormatKeys;
 
         LoadEntriesCommand = new AsyncRelayCommand(LoadEntriesAsync, CanLoadEntries);
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSave);
@@ -199,24 +191,16 @@ public partial class EditorViewModel : ViewModelBase
 
     private void LoadGames()
     {
-        try
-        {
-            Games.Clear();
-            foreach (var game in _installedGameScanService.GetInstalledGamesAsync().GetAwaiter().GetResult())
-            {
-                Games.Add(game);
-            }
+        var load = LocalizationFileSelectionHelper.LoadInstalledGames(_installedGameScanService);
 
-            ErrorMessage = Games.Count == 0
-                ? "Kurulu oyun bulunamadı. Önce 'Kurulu Oyunlar' ekranından tarama yapın veya klasör ekleyin."
-                : null;
-
-            SelectedGame = Games.FirstOrDefault();
-        }
-        catch (Exception exception)
+        Games.Clear();
+        foreach (var game in load.Games)
         {
-            ErrorMessage = "Kurulu oyunlar yüklenemedi: " + exception.Message;
+            Games.Add(game);
         }
+
+        ErrorMessage = load.ErrorMessage;
+        SelectedGame = Games.FirstOrDefault();
     }
 
     private void LoadFiles()
@@ -235,9 +219,13 @@ public partial class EditorViewModel : ViewModelBase
                 .GetDiscoveredFilesAsync(SelectedGame.Id)
                 .GetAwaiter().GetResult();
 
-            foreach (var file in files
-                         .Select(file => new DiscoveredFileRow(
-                             file, _previewableExtensions, _writableExtensions, _writableFormatKeys))
+            var capabilities = new LocalizationAdapterCapabilities(
+                _previewableExtensions,
+                _writableExtensions,
+                _writableFormatKeys);
+
+            foreach (var file in LocalizationFileSelectionHelper
+                         .CreateRows(files, capabilities)
                          .OrderByDescending(row => row.SupportsWrite)
                          .ThenByDescending(row => row.SupportsPreview)
                          .ThenBy(row => row.IsMissing)
@@ -384,57 +372,45 @@ public partial class EditorViewModel : ViewModelBase
             return;
         }
 
-        var confirmed = _confirmationService?.Confirm(
-            "Değişiklikleri Kaydet",
-            $"'{SelectedFile.FileName}' dosyasındaki {changes.Count} kayıt değiştirilecek.\n\n"
-            + "Orijinal dosya değişecek ve işlem öncesi yedek alınacak. Devam etmek istiyor musunuz?");
-
-        if (confirmed != true)
-        {
-            SaveStatusMessage = "Kaydetme işlemi kullanıcı tarafından iptal edildi.";
-            SaveErrorMessage = null;
-            return;
-        }
-
-        IsSaving = true;
-        SaveErrorMessage = null;
-        SaveProgressPercent = 0;
-        SaveStatusMessage = "Güvenli kaydetme hazırlanıyor…";
         _saveCts = new CancellationTokenSource();
 
         try
         {
             var progress = new Progress<LocalizationWriteProgress>(ApplySaveProgress);
-            var result = await _writeService.WriteAsync(
+            var outcome = await LocalizationWriteFlow.ExecuteAsync(
+                    _confirmationService!,
+                    _writeService,
                     SelectedGame.Id,
                     SelectedFile.Id,
                     changes,
-                    _saveCts.Token,
-                    progress)
+                    SelectedFile.FileName,
+                    "Değişiklikleri Kaydet",
+                    "kayıt değiştirilecek.",
+                    "Kaydetme işlemi kullanıcı tarafından iptal edildi.",
+                    "Kaydetme iptal edildi; orijinal dosya korunmalıdır.",
+                    "Kaydetme başarısız: ",
+                    () =>
+                    {
+                        IsSaving = true;
+                        SaveErrorMessage = null;
+                        SaveProgressPercent = 0;
+                        SaveStatusMessage = "Güvenli kaydetme hazırlanıyor…";
+                    },
+                    progress,
+                    _saveCts.Token)
                 .ConfigureAwait(true);
 
-            ApplySaveResult(result);
+            SaveProgressPercent = outcome.ProgressPercent;
+            SaveErrorMessage = outcome.ErrorMessage;
 
-            if (result.Success)
+            if (outcome.Success)
             {
                 // Başarılı yazmadan sonra kaynak metinler değiştiği için tabloyu yenile.
                 IsSaving = false;
                 await LoadEntriesCoreAsync(preserveStatus: true).ConfigureAwait(true);
-                SaveStatusMessage = result.BackupFilePath is null
-                    ? result.Message
-                    : $"{result.Message} Yedek: {result.BackupFilePath}";
             }
-        }
-        catch (OperationCanceledException)
-        {
-            SaveStatusMessage = "Kaydetme iptal edildi; orijinal dosya korunmalıdır.";
-            SaveProgressPercent = 0;
-        }
-        catch (Exception exception)
-        {
-            SaveErrorMessage = "Kaydetme başarısız: " + exception.Message;
-            SaveStatusMessage = null;
-            SaveProgressPercent = 0;
+
+            SaveStatusMessage = outcome.StatusMessage;
         }
         finally
         {
@@ -465,22 +441,6 @@ public partial class EditorViewModel : ViewModelBase
 
         SaveProgressPercent = Math.Clamp(progress.Percent, 0, 100);
         SaveStatusMessage = progress.Message;
-    }
-
-    private void ApplySaveResult(LocalizationWriteResult result)
-    {
-        if (result.Success)
-        {
-            SaveProgressPercent = 100;
-            SaveErrorMessage = null;
-            return;
-        }
-
-        SaveProgressPercent = 0;
-        SaveErrorMessage = result.Message;
-        SaveStatusMessage = result.Status == LocalizationWriteStatus.Restored
-            ? "Orijinal dosya yedekten geri yüklendi."
-            : null;
     }
 
     private async Task ReloadAsync()

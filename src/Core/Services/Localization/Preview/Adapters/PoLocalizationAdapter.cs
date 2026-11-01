@@ -933,35 +933,20 @@ public sealed class PoLocalizationAdapter : PoLocalizationAdapterBase, ILocaliza
         IReadOnlyList<LocalizationWriteTranslation> translations,
         LocalizationFormatWriteOptions? options = null,
         CancellationToken cancellationToken = default)
-        => Task.Run(
-            () => BuildWriteContent(
-                sourceFilePath,
-                translations,
-                options ?? new LocalizationFormatWriteOptions()),
+        => WritableLocalizationWriteSupport.BuildFromSourceAsync(
+            sourceFilePath,
+            translations,
+            options,
+            "PO",
+            (sourceText, writeOptions) => BuildWriteContent(sourceText, translations, writeOptions),
             cancellationToken);
 
     private static LocalizationWriteContentResult BuildWriteContent(
-        string sourceFilePath,
+        string sourceText,
         IReadOnlyList<LocalizationWriteTranslation> translations,
         LocalizationFormatWriteOptions options)
     {
-        if (translations.Count == 0)
-        {
-            return LocalizationWriteContentResult.Fail("Yazılacak çeviri kaydı yok.");
-        }
-
-        var content = LocalizationFileReader.ReadText(sourceFilePath, new LocalizationFormatReadOptions
-        {
-            MaxFileBytes = options.MaxFileBytes,
-            MaxDepth = options.MaxDepth
-        });
-
-        if (!content.Success)
-        {
-            return LocalizationWriteContentResult.Fail(content.ErrorMessage ?? "PO dosyası okunamadı.");
-        }
-
-        var parse = PoDocumentParser.Parse(content.Text!, int.MaxValue, CancellationToken.None);
+        var parse = PoDocumentParser.Parse(sourceText, int.MaxValue, CancellationToken.None);
 
         if (parse.Messages.Count == 0)
         {
@@ -972,7 +957,7 @@ public sealed class PoLocalizationAdapter : PoLocalizationAdapterBase, ILocaliza
         }
 
         var targets = BuildTargets(parse);
-        var lines = content.Text!.Split('\n').ToList();
+        var lines = sourceText.Split('\n').ToList();
         var removedLines = new HashSet<int>();
         var changedMessages = new HashSet<PoMessage>();
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -1038,7 +1023,7 @@ public sealed class PoLocalizationAdapter : PoLocalizationAdapterBase, ILocaliza
 
         if (applied == 0)
         {
-            return LocalizationWriteContentResult.Ok(content.Text!);
+            return LocalizationWriteContentResult.Ok(sourceText);
         }
 
         // Yeni çeviri incelenmiş sayılır: fuzzy işaretini yalnızca değişen kayıtlardan kaldır.
@@ -1050,7 +1035,7 @@ public sealed class PoLocalizationAdapter : PoLocalizationAdapterBase, ILocaliza
             }
         }
 
-        var output = new StringBuilder(content.Text.Length);
+        var output = new StringBuilder(sourceText.Length);
         var firstWritten = true;
 
         for (var index = 0; index < lines.Count; index++)

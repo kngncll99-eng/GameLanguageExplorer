@@ -18,6 +18,7 @@ public static class PreviewTestHelper
         => new(new ILocalizationFormatAdapter[]
         {
             new JsonLocalizationAdapter(),
+            new YamlLocalizationAdapter(),
             new XmlLocalizationAdapter(),
             new CsvLocalizationAdapter(),
             new TsvLocalizationAdapter(),
@@ -1088,6 +1089,8 @@ public class LocalizationFormatAdapterRegistryTests
     [InlineData(".po", "PO")]
     [InlineData(".pot", "POT")]
     [InlineData(".ini", "INI")]
+    [InlineData(".yaml", "YAML")]
+    [InlineData(".yml", "YAML")]
     public void KnownExtensions_HaveAdapters(string extension, string expected)
     {
         var registry = PreviewTestHelper.CreateRegistry();
@@ -1107,7 +1110,6 @@ public class LocalizationFormatAdapterRegistryTests
     [InlineData(".pak")]
     [InlineData(".uasset")]
     [InlineData(".txt")]
-    [InlineData(".yaml")]
     [InlineData(".strings")]
     public void UnimplementedExtensions_HaveNoAdapter(string extension)
     {
@@ -1122,7 +1124,7 @@ public class LocalizationFormatAdapterRegistryTests
     {
         var described = PreviewTestHelper.CreateRegistry().Describe();
 
-        Assert.Equal(8, described.Count);
+        Assert.Equal(9, described.Count);
         Assert.All(described, d =>
             Assert.Equal(
                 d.FormatName is JsonLocalizationAdapter.FormatKey
@@ -1131,6 +1133,7 @@ public class LocalizationFormatAdapterRegistryTests
                     or IniLocalizationAdapter.FormatKey,
                 d.SupportsWrite));
         Assert.Contains(described, d => d.FormatName == LocresCsvLocalizationAdapter.FormatKey);
+        Assert.Contains(described, d => d.FormatName == YamlLocalizationAdapter.FormatKey);
     }
 }
 

@@ -35,8 +35,8 @@ public sealed record LocalizationFormatInfo(
     string? Note);
 
 /// <summary>
-/// Tanınan formatların kataloğu. <b>Hiçbir format için gerçek ayrıştırıcı yoktur</b>;
-/// uzantı eşleşmesi tek başına "destekleniyor" anlamına gelmez.
+/// Tanınan formatların kataloğu. Uzantı eşleşmesi tek başına "destekleniyor" anlamına gelmez;
+/// gerçek okuma desteği kayıtlı adaptörlerle belirlenir.
 /// </summary>
 public static class LocalizationFormatCatalog
 {

@@ -68,6 +68,12 @@
                                 Command="{Binding NavigateToTranslationCommand}" />
                         <Button Style="{StaticResource NavButton}" Content="Editör"
                                 Command="{Binding NavigateToEditorCommand}" />
+                        <Button Style="{StaticResource NavButton}" Content="Çeviri Belleği"
+                                Command="{Binding NavigateToTranslationMemoryCommand}"
+                                ToolTip="Başarılı çevirileri ve yeniden kullanım kayıtlarını gösterir" />
+                        <Button Style="{StaticResource NavButton}" Content="Yedekler"
+                                Command="{Binding NavigateToBackupCommand}"
+                                ToolTip="Güvenli yazma öncesinde alınan yedekleri yönetir" />
 
                         <Border Height="1" Margin="4,12,4,10" Background="{DynamicResource App.Border}" />
                         <TextBlock Text="YAKINDA" FontSize="11" FontWeight="Bold" Margin="12,0,0,6"
@@ -75,8 +81,6 @@
 
                         <Button Style="{StaticResource NavButton}" Content="Dosya Formatları"
                                 Command="{Binding NavigateToFormatsCommand}" IsEnabled="False" />
-                        <Button Style="{StaticResource NavButton}" Content="Yedekleme ve Dışa Aktarım"
-                                Command="{Binding NavigateToBackupCommand}" IsEnabled="False" />
                         <Button Style="{StaticResource NavButton}" Content="Ayarlar"
                                 Command="{Binding NavigateToSettingsCommand}" IsEnabled="False" />
                     </StackPanel>
@@ -97,7 +101,7 @@
                         <TextBlock Text="Veritabanı bağlı" FontSize="12"
                                    Foreground="{DynamicResource App.TextSecondary}" />
                     </StackPanel>
-                    <TextBlock Text="Güvenli yazma modu (JSON)" FontSize="12" Margin="15,3,0,0"
+                    <TextBlock Text="Güvenli yazma modu (JSON/CSV/PO/INI)" FontSize="12" Margin="15,3,0,0"
                                Foreground="{DynamicResource App.TextMuted}" />
                 </StackPanel>
             </Grid>

@@ -2,7 +2,7 @@
 
 Game Language Explorer, Windows 10/11 üzerinde çalışan; oyunları tek bir katalogda toplamayı, kurulu oyunları salt okunur biçimde keşfetmeyi ve oyunların yerelleştirme dosyalarını güvenli biçimde incelemeyi amaçlayan bir WPF masaüstü uygulamasıdır.
 
-> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/Epic/GOG/Ubisoft/EA/Xbox/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü, JSON/CSV/PO/INI için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” ve JSON/CSV/PO dışa aktarma komutları, yan yana yerelleştirme editörü ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. JSON/CSV/PO/INI dışı formatlarda yazma, yedekleme ekranı ve eklenti sistemi henüz yok.
+> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/Epic/GOG/Ubisoft/EA/Xbox/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi (JSON/XML/CSV/TSV/PO/POT/INI/YAML/LocresCSV), JSON içerik kontrolü, JSON/CSV/PO/INI için güvenli yazma altyapısı, AI Çeviri ekranında onaylı “Dosyaya Yaz” ve JSON/CSV/PO dışa aktarma komutları, yan yana yerelleştirme editörü, çeviri belleği, yedek yönetimi ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. JSON/CSV/PO/INI dışı formatlarda yazma ve eklenti sistemi henüz yok.
 
 ## Amaç ve Hedef
 
@@ -29,7 +29,9 @@ Keşif ve önizleme varsayılan olarak **salt okunurdur**. JSON/CSV/PO/INI dosya
   - **Kurulu Oyunlar**
   - **Dil Dosyası Keşfi**
   - **AI Çeviri**
-- **Editör** ekranı aktiftir; Formatlar, Yedekleme ve Ayarlar menü düğmeleri şu an yer tutucudur.
+  - **Çeviri Belleği**
+  - **Yedekler**
+- **Editör** ekranı aktiftir; Formatlar ve Ayarlar menü düğmeleri şu an yer tutucudur.
 - Koyu tema varsayılandır; açık/koyu tema arasında geçiş yapılabilir.
 - Tema tercihi `%LOCALAPPDATA%\GameLanguageExplorer\ui-preferences.json` dosyasında saklanır.
 - Seçili oyun adına göre tahmini bir vurgu rengi üreten oyun paleti vardır; bu renk kesin bilgi olarak sunulmaz.
@@ -110,13 +112,14 @@ Salt okunur önizleme için kayıtlı adaptörler:
 | POT | Gettext şablonu; boş `msgstr` normal kabul edilir |
 | INI | `[Bölüm]` bağlamı, ilk `=`, yorumlar ve sıra korunur |
 | LocresCSV | `key,source,Translation` başlık şeması; başlıkla CSV’den ayrılır |
+| YAML | Blok/flow eşleme ve listeler; `a.b`, `a[0].b` yolları; `|`/`>` blok metinleri; salt okunur |
 
 - Yer tutucular (`{ad}`, `{0}`, `%s`, `%d`, `\n`, `<b>`, `[color=red]` gibi) taranır.
 - Çeviri kalitesi için yer tutucu/karakter karşılaştırması ve kalite doğrulayıcıları vardır.
 - Dosya boyutu varsayılan 32 MB ile sınırlıdır.
 - UTF-8 ve UTF-16 desteklenir; diğer kodlamalar okunabilir hata ile reddedilir.
 - Önizleme veritabanına yazmaz; sonuçlar geçici modeldir.
-- Şu an **JSON, CSV, PO ve INI** için güvenli yazma altyapısı vardır; bu adaptörlerde `SupportsWrite=true`, diğerlerinde `false`. CSV'de yalnızca başlıkta tanınan çeviri sütunu (`translation`, `target`, `translated` vb.), PO'da yalnızca `msgstr` / `msgstr[n]` alanları, INI'de yalnızca `key=value` değer tarafı güncellenir; yorumlar, bölümler, `msgid`, `msgctxt` ve yapı korunur. Yazma servisi orijinali doğrudan değiştirmez; yedek, geçici dosya ve SHA-256 doğrulaması kullanır.
+- Şu an **JSON, CSV, PO ve INI** için güvenli yazma altyapısı vardır; bu adaptörlerde `SupportsWrite=true`, diğerlerinde `false`. Yazılabilir adaptörler dosya okuma/boş istek kontrollerini ortak `WritableLocalizationWriteSupport` üzerinden yapar; hedef alan ve yapı koruma mantığı format adaptöründe kalır. CSV'de yalnızca başlıkta tanınan çeviri sütunu (`translation`, `target`, `translated` vb.), PO'da yalnızca `msgstr` / `msgstr[n]` alanları, INI'de yalnızca `key=value` değer tarafı güncellenir; yorumlar, bölümler, `msgid`, `msgctxt` ve yapı korunur. Yazma servisi orijinali doğrudan değiştirmez; yedek, geçici dosya ve SHA-256 doğrulaması kullanır.
 
 ### 6. AI Çeviri
 
@@ -130,6 +133,7 @@ Salt okunur önizleme için kayıtlı adaptörler:
 - Yer tutucular maskelenir ve çeviri sonrası geri yüklenir.
 - Kalite/terminoloji politikası ve yerleşik oyun sözlüğü uygulanır; kullanıcı sözlüğü için motor sözleşmesi hazırdır ancak arayüze bağlı değildir.
 - AI çağrısından önce `TranslationMemoryEntry` tablosunda kaynak metin + kaynak dil + hedef dil tam eşleşmesi aranır; eşleşme `Yeniden kullanıldı` durumuyla ve sağlayıcı çağrılmadan kullanılır. Başarılı yeni çeviriler belleğe yazılır.
+- **Çeviri Belleği** ekranında kayıtlar kaynak metin, çeviri, dil çifti, kullanım sayısı ve tarihlerle listelenir; kaynak metne göre anlık filtrelenir. Tek kayıt veya tüm bellek onay alınarak silinebilir.
 - Sonuçlar `Aday`, `İnceleme`, `Başarısız`, `Yeniden kullanıldı` ve `Atlandı` durumlarıyla gösterilir.
 - Çalışma günlüğü JSON olarak `%LOCALAPPDATA%\GameLanguageExplorer\translation-runs` altında tutulur.
 - Günlük atomik yazılır; bozuk günlük sessizce sıfırlanmaz.
@@ -150,7 +154,26 @@ Salt okunur önizleme için kayıtlı adaptörler:
 - DataGrid satır/kolon sanallaştırması ve koyu tema kaynakları kullanılır.
 - JSON/CSV/PO/INI dışındaki dosyalar önizlenebilir fakat salt okunur kalır.
 
-### 8. Veri ve Kalıcılık
+### 8. Çeviri Belleği
+
+- Başarılı AI çevirileri `TranslationMemoryEntry` tablosunda saklanır ve aynı kaynak metin tekrar çevrilirken yeniden kullanılır.
+- `Çeviri Belleği` ekranı kayıtları en son kullanılan önce olacak şekilde listeler.
+- Kaynak metin üzerinden anlık arama/filtreleme yapılır.
+- Seçili kayıt veya tüm bellek, onay penceresi sonrasında silinebilir.
+- DataGrid satır/kolon sanallaştırması ve koyu tema kaynakları kullanılır.
+- Listeleme/silme işlemleri yalnızca çeviri belleği tablosuna dokunur; oyun dosyaları ve mevcut çeviri akışı değişmez.
+
+### 9. Yedekler
+
+- Güvenli yazma sırasında oluşturulan `BackupRecord` kayıtları listelenir.
+- Kolonlar: orijinal dosya adı, yedek dosyası, orijinal yol, tarih, boyut, SHA-256 ve durum.
+- Yedek dosyası veya orijinal yol üzerinden arama yapılabilir.
+- Seçili yedek, onay sonrası mevcut `LocalizationWriteService.RestoreAsync` akışıyla geri yüklenir; yedek SHA-256 değeri doğrulanır ve dosya atomik olarak değiştirilir.
+- Seçili yedek, onay sonrası dosyası ve `BackupRecord` kaydı birlikte silinir. Silme yalnızca yapılandırılmış yedek klasörü altındaki dosyalarda yapılır.
+- Orijinal oyun dosyası silme işleminden etkilenmez.
+- DataGrid satır/kolon sanallaştırması ve koyu tema kaynakları kullanılır.
+
+### 10. Veri ve Kalıcılık
 
 - Entity Framework Core + SQLite.
 - Uygulama başlangıcında bekleyen migration’lar otomatik uygulanır.
@@ -163,10 +186,10 @@ Salt okunur önizleme için kayıtlı adaptörler:
   - Diğer: `BackupRecord`, `PluginRegistration`
 - `BackupRecord` güvenli yazma servisi tarafından, `TranslationMemoryEntry` ise çeviri motoru tarafından kullanılır. `GlossaryTerm` ve `PluginRegistration` tabloları şema olarak hazırdır; ilgili iş akışlarının bir kısmı henüz bağlı değildir.
 
-### 9. Test ve Doğrulama
+### 11. Test ve Doğrulama
 
 - xUnit tabanlı birim ve entegrasyon testleri.
-- Son doğrulanan durum: **634 test başarılı**, 0 başarısız, 0 atlanan.
+- Son doğrulanan durum: **655 test başarılı**, 0 başarısız, 0 atlanan.
 - `scripts/validate-project.ps1` salt okunur doğrulama yapar:
   - `dotnet build`
   - `dotnet test`
@@ -237,6 +260,12 @@ GameLanguageExplorer.slnx
 | `src/WPF/ViewModels/InstalledGamesViewModel.cs` | Kurulu oyun tarama, filtreleme ve manuel klasör ekleme |
 | `src/WPF/ViewModels/FileDiscoveryViewModel.cs` | Dil dosyası tarama ve salt okunur önizleme |
 | `src/WPF/ViewModels/TranslationViewModel.cs` | AI çeviri akışı, LM Studio bağlantısı, yazma ve dışa aktarma |
+| `src/WPF/ViewModels/TranslationMemoryViewModel.cs` | Çeviri belleği listeleme, arama ve onaylı silme |
+| `src/WPF/Views/TranslationMemoryView.xaml` | Sanallaştırılmış çeviri belleği tablosu |
+| `src/Data/Services/TranslationMemoryService.cs` | Tam eşleşme, kayıt listeleme ve silme |
+| `src/WPF/ViewModels/BackupViewModel.cs` | Yedek listeleme, arama, onaylı geri yükleme ve silme |
+| `src/WPF/Views/BackupView.xaml` | Sanallaştırılmış yedek tablosu |
+| `src/Data/Services/BackupManagementService.cs` | `BackupRecord` listeleme ve güvenli yedek silme |
 | `src/Core/Services/Localization/Export/LocalizationExportService.cs` | JSON/CSV/PO dışa aktarma |
 | `src/WPF/Services/SaveFileDialogService.cs` | MVVM dostu hedef dosya seçimi |
 | `src/WPF/ViewModels/EditorViewModel.cs` | Yan yana düzenleme, değişiklik takibi ve güvenli kaydetme |
@@ -262,7 +291,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 
 | Modül | Durum | Not |
 |-------|-------|-----|
-| WPF Shell ve navigasyon | ✅ Çalışıyor | Katalog, Kurulu Oyunlar, Dil Keşfi, AI Çeviri |
+| WPF Shell ve navigasyon | ✅ Çalışıyor | Katalog, Kurulu Oyunlar, Dil Keşfi, AI Çeviri, Çeviri Belleği, Yedekler |
 | Koyu/açık tema | ✅ Çalışıyor | Tercih JSON dosyasında kalıcı |
 | Steam arama ve içe aktarma | ✅ Çalışıyor | API anahtarı gerektirmeyen arama |
 | Steam tam katalog senkronizasyonu | ✅ Çalışıyor | `STEAM_API_KEY` gerekir |
@@ -276,13 +305,15 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 | Dil dosyası keşfi | ✅ Çalışıyor | İlerleme, iptal, yol güvenliği, SHA-256 |
 | JSON içerik/güven kontrolü | ✅ Çalışıyor | Sınırlı, salt okunur, güvenli hata durumları |
 | Güvenli JSON/CSV/PO/INI yazma | ✅ Çalışıyor | `BackupRecord`, SHA-256, atomik taşıma, geri yükleme; AI Çeviri/Editör |
-| JSON/XML/CSV/TSV/PO/POT/INI/LocresCSV önizleme | ✅ Çalışıyor | Salt okunur |
+| JSON/XML/CSV/TSV/PO/POT/INI/YAML/LocresCSV önizleme | ✅ Çalışıyor | Salt okunur; YAML'de blok/flow yapı ve `a[0].b` yolları |
 | Yer tutucu ve kalite kontrolleri | ✅ Çalışıyor | Çeviri ve önizleme akışında |
-| OpenAI uyumlu AI çeviri | ✅ Çalışıyor | Varsayılan yerel LM Studio; JSON için onaylı Dosyaya Yaz |
+| OpenAI uyumlu AI çeviri | ✅ Çalışıyor | Varsayılan yerel LM Studio; JSON/CSV/PO/INI için onaylı Dosyaya Yaz |
 | Çeviri dışa aktarma | ✅ Çalışıyor | JSON/CSV/PO; yeni dosya, yer tutucu uyarıları |
 | SQLite şeması ve migration’lar | ✅ Çalışıyor | Başlangıçta otomatik migration |
-| Yan yana editör | ✅ Çalışıyor | JSON düzenleme; diğer formatlar salt okunur |
-| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 634/634 test |
+| Yan yana editör | ✅ Çalışıyor | JSON/CSV/PO/INI düzenleme; diğer formatlar salt okunur |
+| Çeviri belleği yönetimi | ✅ Çalışıyor | Listeleme, kaynak metin filtresi, onaylı tek/toplu silme |
+| Yedek yönetimi | ✅ Çalışıyor | `BackupRecord` listeleme, onaylı geri yükleme ve güvenli silme |
+| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 655/655 test |
 
 > WPF ekranlarının tamamı otomatik UI testleriyle kapsanmaz; build/test sonuçları iş mantığını doğrular, görsel akış manuel kontrol gerektirir.
 
@@ -290,14 +321,15 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 
 ### Dosya yazma ve güvenli düzenleme
 
-- JSON için güvenli yazma servisi vardır; diğer formatlarda geri yazma yoktur.
-- Yan yana editör JSON için vardır; diğer formatlarda düzenleme ve yazma UI'ı yoktur.
+- JSON/CSV/PO/INI için güvenli yazma servisi vardır; diğer formatlarda geri yazma yoktur.
+- Yan yana editör JSON/CSV/PO/INI için vardır; diğer formatlar salt okunur önizlenir.
 - JSON/CSV/PO/INI dışındaki formatlarda yedekleme, atomik yazma, SHA-256 bütünlük doğrulaması ve geri yükleme akışı yoktur.
-- `BackupRecord` tablosu JSON güvenli yazma servisinde kullanılır.
+- `BackupRecord` tablosu güvenli yazma servisinde kullanılır.
 
 ### Format kapsamı
 
-- `YAML`, `TXT`, `STRINGS`, `LOC` ve `MO` yalnızca keşfedilir; ayrıştırıcıları yoktur.
+- `TXT`, `STRINGS`, `LOC` ve `MO` yalnızca keşfedilir; ayrıştırıcıları yoktur.
+- YAML salt okunur önizlenir; gelişmiş YAML özellikleri (çapa/alias, etiket, karmaşık anahtar) desteklenmez.
 - Unreal `.locres`, `.uasset` ve şifreli `.pak` içerikleri okunmuyor.
 - NTE için gerçek `.locres`/PAK doğrulaması; şifreleme ve gerekli ön koşullar nedeniyle henüz yapılamıyor.
 - UTF-8/UTF-16 dışı kodlamalar (ör. Windows-1254) reddedilir.
@@ -324,15 +356,14 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 
 ## Sonraki Adımlar İçin Öneriler
 
-1. **Yedek yönetimi:** Geçmiş yedekleri listeleyen, geri yükleme ve temizleme işlemlerini sunan ekran.
-2. **Editör geliştirmeleri:** Arama/filtreleme, toplu düzenleme ve değişiklik geçmişi eklemek.
-3. **Dışa aktarma geliştirmeleri:** XLIFF/XML gibi ek formatlar ve dışa aktarma şablonları eklemek.
-4. **Format kapsamını genişletme:** Öncelik sırasıyla `MO`, `YAML`, `TXT`, `STRINGS`, `LOC` ve Unreal `.locres` araştırması.
-5. **Mağaza sağlayıcıları:** ek paket filtreleme ve mağaza doğrulama iyileştirmeleri.
-6. **Çeviri altyapısını tamamlama:** Çeviri belleği ve sözlük tablolarını akışa bağlamak; sağlayıcı profili ve güvenli anahtar yönetimi eklemek.
-7. **Eklenti sistemi:** `IGameFormatPlugin` için yükleme, sürüm uyumluluğu ve güvenlik sınırları.
-8. **Performans ve UX:** Katalog senkronizasyonu, büyük dosya önizlemesi ve uzun listeler için ilerleme, iptal ve sanallaştırma.
-9. **Dağıtım:** Windows installer, sürümleme, kod imzalama ve temiz kurulum doğrulaması.
+1. **Editör geliştirmeleri:** Arama/filtreleme, toplu düzenleme ve değişiklik geçmişi eklemek.
+2. **Dışa aktarma geliştirmeleri:** XLIFF/XML gibi ek formatlar ve dışa aktarma şablonları eklemek.
+3. **Format kapsamını genişletme:** Öncelik sırasıyla `MO`, `TXT`, `STRINGS`, `LOC` ve Unreal `.locres` araştırması.
+4. **Mağaza sağlayıcıları:** ek paket filtreleme ve mağaza doğrulama iyileştirmeleri.
+5. **Çeviri altyapısını tamamlama:** sözlük tablosunu akışa bağlamak; sağlayıcı profili ve güvenli anahtar yönetimi eklemek.
+6. **Eklenti sistemi:** `IGameFormatPlugin` için yükleme, sürüm uyumluluğu ve güvenlik sınırları.
+7. **Performans ve UX:** Katalog senkronizasyonu, büyük dosya önizlemesi ve uzun listeler için ilerleme, iptal ve sanallaştırma.
+8. **Dağıtım:** Windows installer, sürümleme, kod imzalama ve temiz kurulum doğrulaması.
 
 ## Kurulum ve Çalıştırma
 

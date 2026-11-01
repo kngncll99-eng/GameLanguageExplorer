@@ -108,4 +108,64 @@ public sealed class TranslationMemoryService : ITranslationMemory
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    public async Task<IReadOnlyList<TranslationMemoryEntry>> GetEntriesAsync(
+        string? sourceTextFilter = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _dbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        IQueryable<TranslationMemoryEntry> query = db.TranslationMemoryEntries
+            .AsNoTracking();
+
+        var filter = sourceTextFilter?.Trim();
+        if (!string.IsNullOrEmpty(filter))
+        {
+            query = query.Where(entry => entry.SourceText.Contains(filter));
+        }
+
+        return await query
+            .OrderByDescending(entry => entry.LastUsedAt ?? entry.CreatedAt)
+            .ThenByDescending(entry => entry.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
+    {
+        if (id <= 0)
+        {
+            return false;
+        }
+
+        await using var db = await _dbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var entry = await db.TranslationMemoryEntries
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (entry is null)
+        {
+            return false;
+        }
+
+        db.TranslationMemoryEntries.Remove(entry);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task<int> DeleteAllAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _dbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return await db.TranslationMemoryEntries
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

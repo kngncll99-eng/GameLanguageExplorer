@@ -15,7 +15,10 @@ public enum LocalizationTextKind
     IniValue = 5,
 
     /// <summary>LocresCSV satırı (<c>key,source,Translation</c>): anahtar + kaynak metin + mevcut çeviri.</summary>
-    LocresCsvEntry = 6
+    LocresCsvEntry = 6,
+
+    /// <summary>YAML skaler değeri (salt okunur önizleme).</summary>
+    YamlScalar = 7
 }
 
 /// <summary>Kaydın çevrilebilirlik durumu.</summary>
@@ -62,7 +65,7 @@ public sealed record LocalizationTextEntry
     /// <summary>Kaydın gerçekten metin olduğuna dair kanıt (ör. "JSON string value at /a/b").</summary>
     public required string Evidence { get; init; }
 
-    /// <summary>Kaynağın format anahtarı (<c>FileFormat.Name</c> ile uyumlu: JSON, XML, CSV, TSV, PO, POT, INI).</summary>
+    /// <summary>Kaynağın format anahtarı (<c>FileFormat.Name</c> ile uyumlu: JSON, XML, CSV, TSV, PO, POT, INI, YAML).</summary>
     public required string FormatKey { get; init; }
 
     /// <summary>

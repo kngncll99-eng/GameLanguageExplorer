@@ -40,6 +40,14 @@
                 <views:EditorView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type viewModels:TranslationMemoryViewModel}">
+                <views:TranslationMemoryView />
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type viewModels:BackupViewModel}">
+                <views:BackupView />
+            </DataTemplate>
+
             <!-- ── Temel tipografi ─────────────────────────────────────────────── -->
             <Style TargetType="Window">
                 <Setter Property="Background" Value="{DynamicResource App.Background}" />

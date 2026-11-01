@@ -32,11 +32,14 @@ public partial class ShellViewModel : ViewModelBase
     public IRelayCommand NavigateToFormatsCommand { get; }
     public IRelayCommand NavigateToEditorCommand { get; }
     public IRelayCommand NavigateToTranslationCommand { get; }
-    public IRelayCommand NavigateToBackupCommand { get; }
+    public IAsyncRelayCommand NavigateToTranslationMemoryCommand { get; }
+    public IAsyncRelayCommand NavigateToBackupCommand { get; }
     public IRelayCommand NavigateToSettingsCommand { get; }
     public IRelayCommand ToggleThemeCommand { get; }
 
     private readonly TranslationViewModel _translationViewModel;
+    private readonly TranslationMemoryViewModel _translationMemoryViewModel;
+    private readonly BackupViewModel _backupViewModel;
     private readonly EditorViewModel _editorViewModel;
     private readonly CatalogViewModel _catalogViewModel;
     private readonly InstalledGamesViewModel _installedGamesViewModel;
@@ -47,12 +50,16 @@ public partial class ShellViewModel : ViewModelBase
         InstalledGamesViewModel installedGamesViewModel,
         FileDiscoveryViewModel fileDiscoveryViewModel,
         TranslationViewModel translationViewModel,
+        TranslationMemoryViewModel translationMemoryViewModel,
+        BackupViewModel backupViewModel,
         EditorViewModel editorViewModel)
     {
         _catalogViewModel = catalogViewModel;
         _installedGamesViewModel = installedGamesViewModel;
         _fileDiscoveryViewModel = fileDiscoveryViewModel;
         _translationViewModel = translationViewModel;
+        _translationMemoryViewModel = translationMemoryViewModel;
+        _backupViewModel = backupViewModel;
         _editorViewModel = editorViewModel;
 
         NavigateToCatalogCommand = new RelayCommand(() =>
@@ -84,7 +91,22 @@ public partial class ShellViewModel : ViewModelBase
             CurrentViewModel = _translationViewModel;
             CurrentSectionTitle = "AI Çeviri";
         });
-        NavigateToBackupCommand = new RelayCommand(() => { /* yer tutucu */ });
+        NavigateToTranslationMemoryCommand = new AsyncRelayCommand(async () =>
+        {
+            CurrentViewModel = _translationMemoryViewModel;
+            CurrentSectionTitle = "Çeviri Belleği";
+
+            // Sayfa her açılışta güncel kayıtları gösterir; çeviri akışı bu ekrana bağlı değildir.
+            await _translationMemoryViewModel.RefreshCommand.ExecuteAsync(null);
+        });
+        NavigateToBackupCommand = new AsyncRelayCommand(async () =>
+        {
+            CurrentViewModel = _backupViewModel;
+            CurrentSectionTitle = "Yedekler";
+
+            // Yedek listesi her açılışta veritabanından tazelenir.
+            await _backupViewModel.RefreshCommand.ExecuteAsync(null);
+        });
         NavigateToSettingsCommand = new RelayCommand(() => { /* yer tutucu */ });
 
         ToggleThemeCommand = new RelayCommand(ToggleTheme);

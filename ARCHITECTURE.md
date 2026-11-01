@@ -32,9 +32,12 @@ Kullanıcı arayüzü katmanı. MVVM deseni kullanır.
   görünürlük dönüştürücüleri
 - `App.xaml.cs` - DI konteyner yapılandırması, migration uygulama, pencere oluşturma
 - `Views/` - `Shell.xaml` (ana pencere, navigasyon), `CatalogView.xaml` (katalog ekranı),
-  `InstalledGamesView.xaml` (kurulu oyunlar ekranı), `EditorView.xaml` (yan yana editör)
+  `InstalledGamesView.xaml` (kurulu oyunlar), `FileDiscoveryView.xaml` (dil dosyası keşfi),
+  `TranslationView.xaml` (AI çeviri), `TranslationMemoryView.xaml` (çeviri belleği),
+  `BackupView.xaml` (yedek yönetimi), `EditorView.xaml` (yan yana editör)
 - `ViewModels/` - `ViewModelBase`, `ShellViewModel`, `CatalogViewModel`, `InstalledGamesViewModel`,
-  `EditorViewModel`
+  `FileDiscoveryViewModel`, `TranslationViewModel`, `TranslationMemoryViewModel`,
+  `BackupViewModel`, `EditorViewModel`
 - `Converters/` - `BoolToVisibilityConverter` (Invert destekli), `StringToVisibilityConverter`,
   `IntToVisibilityConverter`
 - `Services/` - `RegistrySteamRootLocator` (Windows kayıt defterinden Steam kökü; `ISteamRootLocator`)
@@ -54,9 +57,9 @@ xUnit tabanlı birim testleri.
    Bu, uzun ömürlü ViewModel'lerle scoped DbContext'i karıştırmayı ve change tracker şişmesini önler.
 4. **Servis katmanı** - Katalog senkronizasyonu `ICatalogSyncService` / `CatalogSyncService`
    üzerinden yürür; ayrı bir Repository katmanı yoktur (DbContext doğrudan servis içinde kullanılır).
-5. **Ayrıştırma katmanı** - `ILocalizationFormatAdapter` sözleşmesi ve JSON/XML/CSV/TSV/PO/POT/INI/LocresCSV
+5. **Ayrıştırma katmanı** - `ILocalizationFormatAdapter` sözleşmesi ve JSON/YAML/XML/CSV/TSV/PO/POT/INI/LocresCSV
    uygulamaları `Core/Services/Localization/Preview/Adapters` altındadır. JSON, CSV, PO ve INI ayrıca
-   `ILocalizationWritableFormatAdapter` ile güvenli yazma içeriği üretir. `IGameFormatPlugin`
+   `ILocalizationWritableFormatAdapter` ile güvenli yazma içeriği üretir. JSON/CSV/PO/INI writer’ları boş istek ve güvenli kaynak okuma akışını ortak `WritableLocalizationWriteSupport` üzerinden yürütür; format-özel hedef alan yaması adaptörde kalır. `IGameFormatPlugin`
    hâlâ yalnızca arayüzdür.
 6. **Önizleme servisi** - `LocalizationPreviewService` (Data) dosyayı açmadan önce kurulum kökü
    sınırını doğrular, adaptörü seçer ve sonucu döndürür; veritabanına yazmaz.
@@ -106,16 +109,17 @@ Aşağıdaki varlıklar SQLite veritabanında saklanır:
 ## Kısıtlamalar (Mevcut Durum)
 
 **Çalışan:**
-- Ana pencere (`Shell`) + navigasyon menüsü (katalog ve kurulu oyunlar dışındaki düğmeler yer tutucu)
+- Ana pencere (`Shell`) + navigasyon menüsü (katalog, kurulu oyunlar, dil keşfi, AI çeviri, çeviri belleği, yedekler, editör)
 - Steam kataloğu senkronizasyonu (API anahtarı ile) ve Steam aramasından içe aktarma
 - Katalog araması (büyük/küçük harf duyarsız, ilk 100 sonuç)
 - **Steam, Epic, GOG, Ubisoft, EA ve Xbox kurulu oyun taraması (salt okunur)** — `InstalledGamesView`
 - SQLite şeması, migration'lar ve başlangıçta otomatik migration uygulama
 - Hata/uyarı gösterimi: senkronizasyon, arama, tarama ve veritabanı hataları UI'da bildirilir
+- `BackupRecord` tabanlı yedek yönetimi: listeleme, arama, onaylı geri yükleme ve güvenli silme
 
 **Uygulanmadı / eksik:**
 - Mağaza paketleri için ek doğrulama ve filtreleme iyileştirmeleri
-- Dil dosyası adaptörleri: okuma (JSON, XML, CSV, TSV, PO, POT, INI, LocresCSV). MO/YAML/TXT/
+- Dil dosyası adaptörleri: okuma (JSON, YAML, XML, CSV, TSV, PO, POT, INI, LocresCSV). MO/TXT/
   STRINGS/LOC ve paket formatları için ayrıştırıcı yoktur. **Güvenli yazma JSON, CSV, PO ve INI** için
   vardır; diğer formatlarda yazma desteği yoktur.
 - Eklenti sistemi (`IGameFormatPlugin` yalnızca arayüz)

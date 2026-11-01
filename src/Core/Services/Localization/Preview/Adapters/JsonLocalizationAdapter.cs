@@ -87,37 +87,23 @@ public sealed class JsonLocalizationAdapter : ILocalizationFormatAdapter, ILocal
         IReadOnlyList<LocalizationWriteTranslation> translations,
         LocalizationFormatWriteOptions? options = null,
         CancellationToken cancellationToken = default)
-        => Task.Run(
-            () => BuildWriteContent(sourceFilePath, translations, options ?? new LocalizationFormatWriteOptions()),
+        => WritableLocalizationWriteSupport.BuildFromSourceAsync(
+            sourceFilePath,
+            translations,
+            options,
+            "JSON",
+            (sourceText, writeOptions) => BuildWriteContent(sourceText, translations, writeOptions),
             cancellationToken);
 
     private static LocalizationWriteContentResult BuildWriteContent(
-        string sourceFilePath,
+        string sourceText,
         IReadOnlyList<LocalizationWriteTranslation> translations,
         LocalizationFormatWriteOptions options)
     {
-        if (translations.Count == 0)
-        {
-            return LocalizationWriteContentResult.Fail("Yazılacak çeviri kaydı yok.");
-        }
-
-        var readOptions = new LocalizationFormatReadOptions
-        {
-            MaxFileBytes = options.MaxFileBytes,
-            MaxDepth = options.MaxDepth
-        };
-
-        var content = LocalizationFileReader.ReadText(sourceFilePath, readOptions);
-
-        if (!content.Success)
-        {
-            return LocalizationWriteContentResult.Fail(content.ErrorMessage ?? "JSON dosyası okunamadı.");
-        }
-
         try
         {
             var root = JsonNode.Parse(
-                content.Text!,
+                sourceText,
                 nodeOptions: null,
                 documentOptions: new JsonDocumentOptions
                 {
@@ -173,7 +159,7 @@ public sealed class JsonLocalizationAdapter : ILocalizationFormatAdapter, ILocal
             }
 
             // Girdi dosyası çok satırlıysa okunabilir biçimi korumaya çalış.
-            var writeIndented = content.Text!.Contains('\n', StringComparison.Ordinal);
+            var writeIndented = sourceText.Contains('\n', StringComparison.Ordinal);
             var json = root.ToJsonString(new JsonSerializerOptions
             {
                 WriteIndented = writeIndented,

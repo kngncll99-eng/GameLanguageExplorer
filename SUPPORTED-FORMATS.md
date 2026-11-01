@@ -2,7 +2,7 @@
 
 ## Aşama 3: Okuma (ayrıştırma) desteği
 
-Bu aşamada **JSON, XML, CSV/TSV, PO/POT, INI ve LocresCSV** dosyaları ayrıştırılabilir.
+Bu aşamada **JSON, XML, CSV/TSV, PO/POT, INI, YAML ve LocresCSV** dosyaları ayrıştırılabilir.
 **JSON, CSV, PO ve INI için güvenli yazma altyapısı** vardır; diğer formatlarda yazma desteği yoktur.
 JSON, CSV, PO ve INI adaptörlerinde `SupportsWrite=true`, diğer adaptörlerde `false` değerindedir.
 
@@ -16,7 +16,7 @@ JSON, CSV, PO ve INI adaptörlerinde `SupportsWrite=true`, diğer adaptörlerde 
 | POT | .pot | ✅ | ✅ | ❌ | Şablon; boş msgstr normaldir |
 | INI | .ini | ✅ | ✅ | ✅* | [Bölüm] + ilk `=`; bölüm bağlamı korunur. *Yalnızca değer |
 | LocresCSV | .csv | ✅ | ✅ | ❌ | `key,source,Translation` başlık şeması; sütun sırası serbest, boş `Translation` = çeviri yok |
-| YAML | .yaml, .yml | ✅ | ❌ | ❌ | Ayrıştırıcı yok |
+| YAML | .yaml, .yml | ✅ | ✅ | ❌ | Blok/flow eşleme ve listeler; `a.b`, `a[0].b`; `\|`/`>` blok metinleri; salt okunur |
 | TXT | .txt | ✅ | ❌ | ❌ | Ayrıştırıcı yok |
 | STRINGS | .strings | ✅ | ❌ | ❌ | Ayrıştırıcı yok |
 | LOC | .loc | ✅ | ❌ | ❌ | Ayrıştırıcı yok |
@@ -107,7 +107,7 @@ diğer formatlarda yazma komutu pasiftir.
 
 | Konu | Davranış |
 |------|----------|
-| Konum | JSON Pointer (`/a/b/0`), XPath benzeri (`/root/item[2]/@name`), CSV `satır 3 / text` |
+| Konum | JSON Pointer (`/a/b/0`), XPath benzeri (`/root/item[2]/@name`), YAML (`a.b` / `a[0].b`), CSV `satır 3 / text` |
 | Çevrilebilirlik | `Translatable`, `Ambiguous` (bağlam belirsiz), `Skipped` (neden yazılır) |
 | Yapı korunumu | Okuma salt okunur; JSON/CSV/PO/INI güvenli yazma geçici dosya + atomik taşıma kullanır |
 | Değişkenler | `{ad}`, `{0}`, `%s`, `%d`, `\n`, `<b>`, `[color=red]` tanınır ve imza üretilir |
@@ -118,6 +118,7 @@ diğer formatlarda yazma komutu pasiftir.
 | INI bağlam | `[Bölüm]` her kayda `Context` olarak yazılır; dosya sırası korunur |
 | INI değerleri | Boş/sayısal/boolean/yol değerleri `Atlandı`; metinler `Çevrilebilir` |
 | INI teknik dosya | Çevrilebilir oran düşükse ve yol/klasörde ipucu yoksa uyarı verilir |
+| YAML kapsamı | Blok eşleme/liste, tırnaklı skaler, yorum, `\|`/`>` blok metni ve basit flow `[]`/`{}` desteklenir; çapa/alias, etiket ve karmaşık anahtarlar desteklenmez |
 | Kodlama | UTF-8 / UTF-16 (BOM algılama); diğerleri okunabilir hata ile reddedilir |
 | Boyut | Varsayılan 32 MB üstü reddedilir |
 | Güvenlik | XML'de DTD kapalı, harici çözümleyici yok (XXE engellenir) |
@@ -127,7 +128,7 @@ diğer formatlarda yazma komutu pasiftir.
 | Format | Durum |
 |--------|-------|
 | MO okuma | ❌ Planlanmadı |
-| YAML/STRINGS/LOC okuma | ❌ Planlanmadı |
+| STRINGS/LOC okuma | ❌ Planlanmadı |
 | Unreal `.locres` / `.uasset` ayrıştırma | ❌ Planlanmadı |
 | Paket açma (.pak, .bundle, .archive) | ❌ Planlanmadı |
 | **Yazma / geri yazma** | ✅ JSON, CSV, PO ve INI güvenli yazma altyapısı; diğer formatlar ❌ |

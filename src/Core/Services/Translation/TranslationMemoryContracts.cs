@@ -1,3 +1,5 @@
+using GameLanguageExplorer.Core.Entities;
+
 namespace GameLanguageExplorer.Core.Services.Translation;
 
 /// <summary>
@@ -20,4 +22,19 @@ public interface ITranslationMemory
         string sourceLanguage,
         string targetLanguage,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bellekteki kayıtları en son kullanılan önce olacak şekilde listeler.
+    /// <paramref name="sourceTextFilter"/> boş değilse yalnızca kaynak metni bu değeri içeren
+    /// kayıtlar döndürülür.
+    /// </summary>
+    Task<IReadOnlyList<TranslationMemoryEntry>> GetEntriesAsync(
+        string? sourceTextFilter = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Tek bir çeviri belleği kaydını siler. Kayıt bulunamazsa <c>false</c> döner.</summary>
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>Tüm çeviri belleği kayıtlarını siler ve silinen kayıt sayısını döndürür.</summary>
+    Task<int> DeleteAllAsync(CancellationToken cancellationToken = default);
 }
