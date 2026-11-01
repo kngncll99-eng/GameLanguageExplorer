@@ -15,7 +15,7 @@ using GameLanguageExplorer.Core.Interfaces;
 /// teknik ayar dosyasına benziyorsa uyarı üretilir.</item>
 /// </list>
 /// </summary>
-public sealed class IniLocalizationAdapter : ILocalizationFormatAdapter
+public sealed class IniLocalizationAdapter : ILocalizationFormatAdapter, ILocalizationWritableFormatAdapter
 {
     public const string FormatKey = "INI";
 
@@ -27,7 +27,7 @@ public sealed class IniLocalizationAdapter : ILocalizationFormatAdapter
 
     public bool SupportsRead => true;
 
-    public bool SupportsWrite => false;
+    public bool SupportsWrite => true;
 
     public Task<LocalizationTextReadResult> ReadAsync(
         string filePath,
@@ -186,6 +186,186 @@ public sealed class IniLocalizationAdapter : ILocalizationFormatAdapter
 
         return result;
     }
+
+    public Task<LocalizationWriteContentResult> BuildWriteContentAsync(
+        string sourceFilePath,
+        IReadOnlyList<LocalizationWriteTranslation> translations,
+        LocalizationFormatWriteOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => Task.Run(
+            () => BuildWriteContent(
+                sourceFilePath,
+                translations,
+                options ?? new LocalizationFormatWriteOptions()),
+            cancellationToken);
+
+    private static LocalizationWriteContentResult BuildWriteContent(
+        string sourceFilePath,
+        IReadOnlyList<LocalizationWriteTranslation> translations,
+        LocalizationFormatWriteOptions options)
+    {
+        if (translations.Count == 0)
+        {
+            return LocalizationWriteContentResult.Fail("Yazılacak çeviri kaydı yok.");
+        }
+
+        var content = LocalizationFileReader.ReadText(sourceFilePath, new LocalizationFormatReadOptions
+        {
+            MaxFileBytes = options.MaxFileBytes,
+            MaxDepth = options.MaxDepth
+        });
+
+        if (!content.Success)
+        {
+            return LocalizationWriteContentResult.Fail(content.ErrorMessage ?? "INI dosyası okunamadı.");
+        }
+
+        var lines = content.Text!.Split('\n').ToList();
+        var targets = BuildTargets(lines);
+        var applied = 0;
+
+        foreach (var translation in translations)
+        {
+            if (string.IsNullOrWhiteSpace(translation.Key))
+            {
+                return LocalizationWriteContentResult.Fail("INI kayıt anahtarı boş olamaz.");
+            }
+
+            if (!targets.TryGetValue(translation.Key, out var target))
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"INI kaydı bulunamadı: '{translation.Key}'.");
+            }
+
+            if (!string.Equals(target.SourceText, translation.SourceText, StringComparison.Ordinal))
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"'{translation.Key}' kaynak değeri değişmiş; yazma reddedildi.");
+            }
+
+            if (string.Equals(target.SourceText, translation.Translation, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(translation.Translation)
+                || translation.Translation.Contains('\r')
+                || translation.Translation.Contains('\n'))
+            {
+                return LocalizationWriteContentResult.Fail(
+                    $"'{translation.Key}' için tek satırlı, boş olmayan bir değer gerekli.");
+            }
+
+            lines[target.LineIndex] = ReplaceValue(lines[target.LineIndex], target, translation.Translation);
+            applied++;
+        }
+
+        return applied == 0
+            ? LocalizationWriteContentResult.Ok(content.Text!)
+            : LocalizationWriteContentResult.Ok(string.Join("\n", lines));
+    }
+
+    /// <summary>
+    /// Okuma sırasındaki bölüm/anahtar ve yinelenen anahtar numaralandırmasını birebir
+    /// kullanarak yalnızca değer aralığını kaydeder.
+    /// </summary>
+    private static Dictionary<string, IniWriteTarget> BuildTargets(IReadOnlyList<string> lines)
+    {
+        var targets = new Dictionary<string, IniWriteTarget>(StringComparer.Ordinal);
+        var occurrences = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        string? section = null;
+
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var raw = lines[index];
+            var ending = raw.EndsWith('\r') ? "\r" : string.Empty;
+            var content = ending.Length == 0 ? raw : raw[..^1];
+            var trimmed = content.Trim();
+
+            if (trimmed.Length == 0 || trimmed[0] is ';' or '#')
+            {
+                continue;
+            }
+
+            if (trimmed[0] == '[')
+            {
+                var close = trimmed.IndexOf(']');
+
+                if (close >= 0)
+                {
+                    var name = trimmed[1..close].Trim();
+                    section = name.Length == 0 ? null : name;
+                }
+
+                continue;
+            }
+
+            var separator = trimmed.IndexOf('=');
+
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var key = trimmed[..separator].Trim();
+
+            if (key.Length == 0)
+            {
+                continue;
+            }
+
+            var occurrenceKey = section is null ? key : $"{section} / {key}";
+            var entryKey = occurrenceKey;
+
+            if (occurrences.TryGetValue(occurrenceKey, out var seen))
+            {
+                occurrences[occurrenceKey] = seen + 1;
+                entryKey = $"{occurrenceKey} #{seen + 1}";
+            }
+            else
+            {
+                occurrences[occurrenceKey] = 1;
+            }
+
+            var coreStart = content.Length - content.TrimStart().Length;
+            var coreEnd = content.Length - content.TrimEnd().Length;
+            var core = content[coreStart..(content.Length - coreEnd)];
+            var equals = core.IndexOf('=');
+
+            if (equals <= 0)
+            {
+                continue;
+            }
+
+            var valueRaw = core[(equals + 1)..];
+            var leftWhitespace = valueRaw.Length - valueRaw.TrimStart(' ', '\t').Length;
+            var rightWhitespace = valueRaw.Length - valueRaw.TrimEnd(' ', '\t').Length;
+            var valueStart = coreStart + equals + 1 + leftWhitespace;
+            var valueEnd = coreStart + core.Length - rightWhitespace;
+
+            if (valueEnd <= valueStart)
+            {
+                continue;
+            }
+
+            targets[entryKey] = new IniWriteTarget(
+                index,
+                valueStart,
+                valueEnd,
+                content[valueStart..valueEnd]);
+        }
+
+        return targets;
+    }
+
+    private static string ReplaceValue(string raw, IniWriteTarget target, string translation)
+        => raw[..target.ValueStart] + translation + raw[target.ValueEnd..];
+
+    private sealed record IniWriteTarget(
+        int LineIndex,
+        int ValueStart,
+        int ValueEnd,
+        string SourceText);
 
     /// <summary>Boş / sayısal / yol değerlerini ayırır; metni çeviri adayı sayar.</summary>
     private static (LocalizationEntryStatus Status, string? SkipReason) ClassifyValue(string value)

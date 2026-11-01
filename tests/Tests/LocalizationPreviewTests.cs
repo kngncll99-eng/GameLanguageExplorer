@@ -1097,9 +1097,9 @@ public class LocalizationFormatAdapterRegistryTests
         Assert.Equal(expected, adapter!.FormatName);
         Assert.True(adapter.SupportsRead);
 
-        // Güvenli yazma altyapısı JSON, CSV ve PO adaptörlerinde açıktır; POT şablondur.
+        // Güvenli yazma altyapısı JSON, CSV, PO ve INI adaptörlerinde açıktır; POT şablondur.
         Assert.Equal(
-            extension is ".json" or ".csv" or ".po",
+            extension is ".json" or ".csv" or ".po" or ".ini",
             adapter.SupportsWrite);
     }
 
@@ -1127,7 +1127,8 @@ public class LocalizationFormatAdapterRegistryTests
             Assert.Equal(
                 d.FormatName is JsonLocalizationAdapter.FormatKey
                     or CsvLocalizationAdapter.FormatKey
-                    or PoLocalizationAdapter.FormatKey,
+                    or PoLocalizationAdapter.FormatKey
+                    or IniLocalizationAdapter.FormatKey,
                 d.SupportsWrite));
         Assert.Contains(described, d => d.FormatName == LocresCsvLocalizationAdapter.FormatKey);
     }

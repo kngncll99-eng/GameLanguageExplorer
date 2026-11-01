@@ -55,7 +55,7 @@ xUnit tabanlı birim testleri.
 4. **Servis katmanı** - Katalog senkronizasyonu `ICatalogSyncService` / `CatalogSyncService`
    üzerinden yürür; ayrı bir Repository katmanı yoktur (DbContext doğrudan servis içinde kullanılır).
 5. **Ayrıştırma katmanı** - `ILocalizationFormatAdapter` sözleşmesi ve JSON/XML/CSV/TSV/PO/POT/INI/LocresCSV
-   uygulamaları `Core/Services/Localization/Preview/Adapters` altındadır. JSON, CSV ve PO ayrıca
+   uygulamaları `Core/Services/Localization/Preview/Adapters` altındadır. JSON, CSV, PO ve INI ayrıca
    `ILocalizationWritableFormatAdapter` ile güvenli yazma içeriği üretir. `IGameFormatPlugin`
    hâlâ yalnızca arayüzdür.
 6. **Önizleme servisi** - `LocalizationPreviewService` (Data) dosyayı açmadan önce kurulum kökü
@@ -116,11 +116,11 @@ Aşağıdaki varlıklar SQLite veritabanında saklanır:
 **Uygulanmadı / eksik:**
 - Steam dışı kurulu oyun sağlayıcıları (Epic, Ubisoft, GOG, EA, Xbox)
 - Dil dosyası adaptörleri: okuma (JSON, XML, CSV, TSV, PO, POT, INI, LocresCSV). MO/YAML/TXT/
-  STRINGS/LOC ve paket formatları için ayrıştırıcı yoktur. **Güvenli yazma JSON, CSV ve PO** için
+  STRINGS/LOC ve paket formatları için ayrıştırıcı yoktur. **Güvenli yazma JSON, CSV, PO ve INI** için
   vardır; diğer formatlarda yazma desteği yoktur.
 - Eklenti sistemi (`IGameFormatPlugin` yalnızca arayüz)
 - AI çeviri motoru
-- JSON/CSV/PO güvenli yazma servisi (`BackupRecord` + geçici dosya + SHA-256 + atomik taşıma) ve
+- JSON/CSV/PO/INI güvenli yazma servisi (`BackupRecord` + geçici dosya + SHA-256 + atomik taşıma) ve
   AI Çeviri ekranında onaylı “Dosyaya Yaz” komutu vardır; diğer formatlar henüz yoktur.
 - Oyun profili ve kaynak/doğrulama ekranı (`GameProfile` tablosu var, kullanılmıyor)
 - Tam katalog senkronizasyonu için ilerleme göstergesi (yalnızca belirsiz ilerleme çubuğu var)
@@ -143,7 +143,7 @@ ISteamRootLocator ──► SteamLibraryLocator ──► manifest dosyaları
                                        • görülmeyenler: IsInstalled = false (SİLİNMEZ)
 ```
 
-**Güvenlik sınırları:** keşif salt okunurdur. JSON/CSV/PO için güvenli yazma servisi yedek, geçici dosya,
+**Güvenlik sınırları:** keşif salt okunurdur. JSON/CSV/PO/INI için güvenli yazma servisi yedek, geçici dosya,
 SHA-256 ve atomik taşıma kullanır; diğer formatlarda oyun dosyalarına yazma/taşıma/silme yoktur. Erişilemeyen
 klasör veya bozuk manifest tüm taramayı durdurmaz (`IScanDiagnostics.LastScanWarnings` ile
 raporlanır). Yönetici izni gerektiren işlem yapılmaz (HKCU öncelikli).
