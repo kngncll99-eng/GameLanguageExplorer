@@ -1245,20 +1245,20 @@ public class ManualGameFolderTests
 public class GameSourceCatalogTests
 {
     [Fact]
-    public void SteamEpicGogUbisoftAndManualAreImplemented()
+    public void SteamEpicGogUbisoftEaAndManualAreImplemented()
     {
         var implemented = GameSourceCatalog.Implemented.Select(s => s.Key).ToList();
 
-        Assert.Equal(5, implemented.Count);
+        Assert.Equal(6, implemented.Count);
         Assert.Contains(GameSourceCatalog.SteamKey, implemented);
         Assert.Contains(GameSourceCatalog.EpicKey, implemented);
         Assert.Contains(GameSourceCatalog.GogKey, implemented);
         Assert.Contains(GameSourceCatalog.UbisoftKey, implemented);
+        Assert.Contains(GameSourceCatalog.EaKey, implemented);
         Assert.Contains(GameSourceCatalog.ManualKey, implemented);
     }
 
     [Theory]
-    [InlineData("EA")]
     [InlineData("Xbox")]
     public void OtherLaunchersAreMarkedAsPlannedNotImplemented(string key)
     {

@@ -109,12 +109,12 @@ Aşağıdaki varlıklar SQLite veritabanında saklanır:
 - Ana pencere (`Shell`) + navigasyon menüsü (katalog ve kurulu oyunlar dışındaki düğmeler yer tutucu)
 - Steam kataloğu senkronizasyonu (API anahtarı ile) ve Steam aramasından içe aktarma
 - Katalog araması (büyük/küçük harf duyarsız, ilk 100 sonuç)
-- **Steam, Epic, GOG ve Ubisoft kurulu oyun taraması (salt okunur)** — `InstalledGamesView`
+- **Steam, Epic, GOG, Ubisoft ve EA kurulu oyun taraması (salt okunur)** — `InstalledGamesView`
 - SQLite şeması, migration'lar ve başlangıçta otomatik migration uygulama
 - Hata/uyarı gösterimi: senkronizasyon, arama, tarama ve veritabanı hataları UI'da bildirilir
 
 **Uygulanmadı / eksik:**
-- Steam, Epic, GOG ve Ubisoft dışı kurulu oyun sağlayıcıları (EA, Xbox)
+- Steam, Epic, GOG, Ubisoft ve EA dışı kurulu oyun sağlayıcıları (Xbox)
 - Dil dosyası adaptörleri: okuma (JSON, XML, CSV, TSV, PO, POT, INI, LocresCSV). MO/YAML/TXT/
   STRINGS/LOC ve paket formatları için ayrıştırıcı yoktur. **Güvenli yazma JSON, CSV, PO ve INI** için
   vardır; diğer formatlarda yazma desteği yoktur.
@@ -136,6 +136,7 @@ ISteamRootLocator ──► SteamLibraryLocator ──► manifest dosyaları
                                        EpicInstalledGameProvider
                                        GogInstalledGameProvider
                                        UbisoftInstalledGameProvider
+                                       EaInstalledGameProvider
                                        (Core, dosya sistemi/registry; DB yok)
                                                      │ InstalledGame (GameId=0, DetectedGameName)
                                                      ▼

@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using GameLanguageExplorer.Core.Interfaces;
 using GameLanguageExplorer.Core.Services;
+using GameLanguageExplorer.Core.Services.Ea;
 using GameLanguageExplorer.Core.Services.Epic;
 using GameLanguageExplorer.Core.Services.Gog;
 using GameLanguageExplorer.Core.Services.Localization;
@@ -74,6 +75,8 @@ public partial class App : Application
                     services.AddSingleton<IInstalledGameProvider, GogInstalledGameProvider>();
                     services.AddSingleton<IUbisoftInstallationLocator, RegistryUbisoftInstallationLocator>();
                     services.AddSingleton<IInstalledGameProvider, UbisoftInstalledGameProvider>();
+                    services.AddSingleton<IEaInstallationLocator, RegistryEaInstallationLocator>();
+                    services.AddSingleton<IInstalledGameProvider, EaInstalledGameProvider>();
                     services.AddSingleton<IInstalledGameProvider, ManualGameFolderProvider>();
 
                     services.AddSingleton<IFolderPickerService, FolderPickerService>();
