@@ -1,36 +1,294 @@
 # Game Language Explorer
 
-Windows 10/11 için C# ve WPF kullanarak geliştirilen evrensel oyun kataloğu ve dil dosyası analiz aracı.
+Game Language Explorer, Windows 10/11 üzerinde çalışan; oyunları tek bir katalogda toplamayı, kurulu oyunları salt okunur biçimde keşfetmeyi ve oyunların yerelleştirme dosyalarını güvenli biçimde incelemeyi amaçlayan bir WPF masaüstü uygulamasıdır.
 
-## Amaç
+> **Mevcut durum:** Erken geliştirme aşaması. Katalog, Steam/manuel kurulu oyun keşfi, dil dosyası keşfi ve önizlemesi, JSON içerik kontrolü ve OpenAI uyumlu yerel LLM ile çeviri denemeleri çalışıyor. Oyun dosyalarına yazma, yedekleme/geri yükleme, editör ve eklenti sistemi henüz yok.
 
-Farklı platformlardaki (Steam, Epic Games Store, Ubisoft Connect, GOG, EA app, Xbox) oyunları ortak bir kataloğa eklemek; her oyuna özel bilgi paneli oluşturmak ve dil dosyası formatlarını araştırıp görüntülemek.
+## Amaç ve Hedef
 
-## Teknoloji Yığını
+Projenin amacı, farklı oyun kaynaklarını ortak bir veri modelinde birleştirmek ve yerelleştirme süreçlerini daha görünür, güvenli ve izlenebilir hale getirmektir.
 
-- C# 12 / .NET 10 LTS
-- WPF ve MVVM (CommunityToolkit.Mvvm)
-- SQLite (Entity Framework Core)
-- Dependency Injection (Microsoft.Extensions.DependencyInjection)
-- Yapılandırılmış loglama (Microsoft.Extensions.Logging)
-- xUnit testleri
+Temel hedefler:
 
-## Proje Yapısı
+- Steam başta olmak üzere oyunları aramak, kataloğa eklemek ve yerel SQLite veritabanında saklamak.
+- Kurulu oyunları mağaza manifestlerinden veya kullanıcının seçtiği klasörlerden salt okunur biçimde tespit etmek.
+- Oyun klasörlerindeki dil dosyası adaylarını keşfetmek; format, güven düzeyi ve kanıtlarıyla birlikte raporlamak.
+- JSON, XML, CSV, TSV, PO, POT, INI ve LocresCSV dosyalarını salt okunur olarak ayrıştırıp metin kayıtlarını önizlemek.
+- Yerel veya OpenAI uyumlu bir LLM ile çeviri adayları üretmek; yer tutucuları, kaliteyi ve çalışma günlüğünü yönetmek.
+- Uzun vadede güvenli düzenleme, yedekleme, geri yükleme ve motor özelinde format eklentileri sunmak.
 
-```
-GameLanguageExplorer/
+Bu aşamada uygulama **oyun dosyalarını değiştirmez**. Keşif, önizleme ve çeviri sonuçları salt okunur akışlardır; kaynak dosyaya geri yazma henüz uygulanmamıştır.
+
+## Tamamlanan Özellikler ve Modüller
+
+### 1. Masaüstü Uygulama ve Tema
+
+- WPF tabanlı tek pencereli `Shell` ve MVVM navigasyonu.
+- Çalışan ekranlar:
+  - **Global Oyun Kataloğu**
+  - **Kurulu Oyunlar**
+  - **Dil Dosyası Keşfi**
+  - **AI Çeviri**
+- Formatlar, Editör, Yedekleme ve Ayarlar menü düğmeleri şu an yer tutucudur.
+- Koyu tema varsayılandır; açık/koyu tema arasında geçiş yapılabilir.
+- Tema tercihi `%LOCALAPPDATA%\GameLanguageExplorer\ui-preferences.json` dosyasında saklanır.
+- Seçili oyun adına göre tahmini bir vurgu rengi üreten oyun paleti vardır; bu renk kesin bilgi olarak sunulmaz.
+
+### 2. Oyun Kataloğu
+
+- Steam mağazasında isimle arama ve sonuçları kataloğa aktarma.
+- Steam arama sonuçlarında ad, geliştirici, yayıncı, kısa açıklama, çıkış tarihi ve kapak görseli gibi alanların zenginleştirilmesi.
+- `STEAM_API_KEY` ortam değişkeni varsa Steam tam katalog senkronizasyonu.
+- Katalog kayıtlarının SQLite üzerinde tutulması, arama ve listeleme.
+- Katalog listesinde ilk 100 kaydın gösterilmesi; toplam katalog sayısının ayrıca raporlanması.
+- Hata, boş sonuç ve iptal durumlarının arayüzde bildirilmesi.
+
+Steam dışında katalog sağlayıcısı henüz yoktur.
+
+### 3. Kurulu Oyun Keşfi
+
+- **Steam (salt okunur):**
+  - Steam kökünü kayıt defterinden ve bilinen yollardan bulma.
+  - `libraryfolders.vdf` ile ek kütüphaneleri okuma.
+  - `appmanifest_*.acf` dosyalarından AppID, oyun adı, kurulum klasörü ve boyut çıkarma.
+- **Manuel klasör:** Kullanıcının seçtiği oyun klasörünü `Manual` kaynağıyla ekleme.
+- Kaynağa göre filtreleme ve tarama sonucu özeti.
+- Eksik/erişilemeyen klasörlerde mevcut kayıtları koruma; başarısız veya kısmi taramada kayıt silmeme.
+- Steam dışı mağazalar (`Epic`, `GOG`, `Ubisoft`, `EA`, `Xbox`) yalnızca “planlandı” olarak listelenir; taramaya katılmaz.
+
+### 4. Dil Dosyası Keşfi
+
+- Seçilen kurulum klasöründe özyinelemeli, salt okunur tarama.
+- İlerleme raporu ve iptal desteği.
+- Kök dizin sınırı, sembolik bağlantı döngüleri ve kök dışına işaret eden bağlantılar için güvenlik kontrolleri.
+- Aday formatlar:
+  - Düz metin: `JSON`, `XML`, `CSV`, `TSV`, `PO`, `POT`, `INI`, `YAML/YML`, `TXT`, `STRINGS`, `LOC`
+  - İkili: `MO`
+  - Paket/arşiv: `PAK`, `BUNDLE`, `ARCHIVE`, `ASSETS`, `UASSET`, `BANK`
+- Paketler metin olarak sınıflandırılmaz; yalnızca dosya/klasör adında yerelleştirme ipucu varsa listelenir.
+- Her aday için uzantı, boyut, format, güven düzeyi, destek durumu ve gerekçe kaydı.
+- `FormatEvidence` ile uzantı, dosya adı, klasör adı ve içerik kanıtlarının saklanması.
+- JSON adaylarında sınırlı içerik incelemesi:
+  - Varsayılan üst sınır 256 KB.
+  - Geçerli JSON ve yeterli metin değeri güveni yükseltir.
+  - Geçersiz, boş, okunamayan, aşırı büyük veya belirsiz JSON güveni düşürür; tarama durmaz.
+- SHA-256 yalnızca adaylar için hesaplanır; 64 MB üzerindeki dosyalarda atlanır.
+- Tekrar tarama mükerrer kayıt oluşturmaz; bulunamayan dosyalar silinmez, “artık bulunamadı” olarak işaretlenir.
+
+### 5. Dil Dosyası Önizlemesi
+
+Salt okunur önizleme için kayıtlı adaptörler:
+
+| Format | Özellik |
+|--------|---------|
+| JSON | JSON Pointer konumu; string değerleri aday, sayı/boolean/null atlanır |
+| XML | Element metni ve metin attribute; DTD kapalı, XXE engellenir |
+| CSV | Otomatik ayraç (virgül, noktalı virgül, sekme, pipe), RFC 4180 tırnakları |
+| TSV | CSV motoru, sabit sekme ayracı |
+| PO | `msgctxt`, çok satırlı dizeler, `#, fuzzy`, mevcut çeviri |
+| POT | Gettext şablonu; boş `msgstr` normal kabul edilir |
+| INI | `[Bölüm]` bağlamı, ilk `=`, yorumlar ve sıra korunur |
+| LocresCSV | `key,source,Translation` başlık şeması; başlıkla CSV’den ayrılır |
+
+- Yer tutucular (`{ad}`, `{0}`, `%s`, `%d`, `\n`, `<b>`, `[color=red]` gibi) taranır.
+- Çeviri kalitesi için yer tutucu/karakter karşılaştırması ve kalite doğrulayıcıları vardır.
+- Dosya boyutu varsayılan 32 MB ile sınırlıdır.
+- UTF-8 ve UTF-16 desteklenir; diğer kodlamalar okunabilir hata ile reddedilir.
+- Önizleme veritabanına yazmaz; sonuçlar geçici modeldir.
+- **Hiçbir formatta yazma desteği yoktur** (`SupportsWrite` daima `false`).
+
+### 6. AI Çeviri
+
+- AI Çeviri ekranında kurulu oyun ve keşfedilmiş dosya seçimi.
+- Çeviri öncesi salt okunur önizleme ve çevrilebilir kayıt sayısı.
+- Varsayılan olarak yerel LM Studio uç noktası (`http://127.0.0.1:1234/v1`) ve yerel model kullanılır.
+- OpenAI uyumlu herhangi bir uç nokta yapılandırılabilir.
+- API anahtarı isteğe bağlıdır; varsayılan olarak `GLE_LLM_API_KEY` ortam değişkeninden okunur.
+- Partili çeviri, ilerleme, iptal ve önceki çalışmayı sürdürme desteği.
+- Sağlayıcı yanıtı JSON sözleşmesiyle doğrulanır; eksik/bozuk yanıtlar güvenli biçimde raporlanır.
+- Yer tutucular maskelenir ve çeviri sonrası geri yüklenir.
+- Kalite/terminoloji politikası ve yerleşik oyun sözlüğü uygulanır; kullanıcı sözlüğü için motor sözleşmesi hazırdır ancak arayüze bağlı değildir.
+- Sonuçlar `Aday`, `İnceleme`, `Başarısız`, `Yeniden kullanıldı` ve `Atlandı` durumlarıyla gösterilir.
+- Çalışma günlüğü JSON olarak `%LOCALAPPDATA%\GameLanguageExplorer\translation-runs` altında tutulur.
+- Günlük atomik yazılır; bozuk günlük sessizce sıfırlanmaz.
+- **Çeviri sonuçları kaynak oyun dosyasına geri yazılmaz.** Bu aşamada yalnızca aday üretimi, inceleme ve günlük vardır.
+
+### 7. Veri ve Kalıcılık
+
+- Entity Framework Core + SQLite.
+- Uygulama başlangıcında bekleyen migration’lar otomatik uygulanır.
+- Veritabanı: `%LOCALAPPDATA%\GameLanguageExplorer\gamelanguageexplorer.db`
+- Başlıca tablolar/entity’ler:
+  - Oyun kataloğu: `Game`, `GamePlatform`, `GameVersion`, `GameProfile`, `CatalogSource`
+  - Kurulumlar: `InstalledGame`
+  - Dil dosyaları: `DiscoveredFile`, `FileFormat`, `FormatEvidence`
+  - Yerelleştirme: `LocalizationProject`, `LocalizationEntry`, `GlossaryTerm`, `TranslationMemoryEntry`
+  - Diğer: `BackupRecord`, `PluginRegistration`
+- `TranslationMemoryEntry`, `GlossaryTerm`, `BackupRecord` ve `PluginRegistration` tabloları şema olarak hazırdır; ilgili iş akışlarının bir kısmı henüz bağlı değildir.
+
+### 8. Test ve Doğrulama
+
+- xUnit tabanlı birim ve entegrasyon testleri.
+- Son doğrulanan durum: **596 test başarılı**, 0 başarısız, 0 atlanan.
+- `scripts/validate-project.ps1` salt okunur doğrulama yapar:
+  - `dotnet build`
+  - `dotnet test`
+  - Git durum özeti
+  - JSON ve Markdown raporu
+- Raporlar: `%LOCALAPPDATA%\GameLanguageExplorer\validation-runs`
+
+## Kullanılan Teknolojiler ve Kütüphaneler
+
+| Alan | Teknoloji |
+|------|-----------|
+| Dil / çalışma zamanı | C#, .NET 10 |
+| Masaüstü UI | WPF |
+| MVVM | CommunityToolkit.Mvvm 8.4.2 |
+| Veri erişimi | Entity Framework Core 10.0.13 |
+| Veritabanı | SQLite |
+| DI / hosting | Microsoft.Extensions.DependencyInjection, Hosting |
+| HTTP | Microsoft.Extensions.Http |
+| Loglama | Microsoft.Extensions.Logging |
+| JSON | `System.Text.Json` |
+| XML | `System.Xml` / güvenli XML ayarları |
+| Test | xUnit 2.9.3, Microsoft.NET.Test.Sdk, coverlet |
+| Hedef platform | Windows 10/11, `net10.0-windows` |
+
+Projede JSON, XML, CSV/TSV, PO/POT, INI ve LocresCSV için özel yazılmış salt okunur adaptörler kullanılır; harici bir yerelleştirme ayrıştırma kütüphanesi yoktur.
+
+## Klasör Yapısı
+
+```text
+GameLanguageExplorer.slnx
 ├── src/
-│   ├── Core/              # Varlıklar, arayüzler, sözleşmeler
-│   ├── Data/              # SQLite DbContext, migrationlar
-│   └── WPF/               # WPF arayüzü, ViewModel'ler, Görünümler
-└── tests/
-    └── Tests/             # xUnit testleri
+│   ├── Core/
+│   │   ├── Entities/              # EF Core varlıkları
+│   │   ├── Interfaces/            # Katalog, kurulum ve format sözleşmeleri
+│   │   └── Services/
+│   │       ├── Steam/             # Steam katalog ve manifest okuma
+│   │       ├── Localization/      # Format kataloğu, sınıflandırıcı, JSON içerik incelemesi
+│   │       │   └── Preview/       # Dosya okuyucu, adaptörler, yer tutucu/kalite araçları
+│   │       └── Translation/       # OpenAI uyumlu sağlayıcı, çeviri motoru, günlük
+│   ├── Data/
+│   │   ├── AppDbContext.cs
+│   │   ├── Migrations/
+│   │   └── Services/              # Katalog senkronizasyonu, kurulum/dil dosyası tarama, önizleme
+│   └── WPF/
+│       ├── App.xaml / App.xaml.cs # DI, migration, tema başlangıcı
+│       ├── Views/                 # Shell, katalog, kurulu oyunlar, keşif, çeviri
+│       ├── ViewModels/            # MVVM ekran mantığı
+│       ├── Services/              # Tema, klasör seçici, Steam kök bulucu
+│       └── Themes/                # Koyu/açık tema sözlükleri
+├── tests/Tests/                   # xUnit testleri
+├── scripts/validate-project.ps1   # Salt okunur build/test/Git doğrulaması
+├── ARCHITECTURE.md
+├── ROADMAP.md
+├── SUPPORTED-FORMATS.md
+├── CATALOG-SOURCES.md
+├── NTE-LOCALIZATION-RESEARCH.md
+└── SECURITY.md
 ```
 
-## Kurulum
 
-1. .NET 10 SDK'nın yüklü olduğundan emin olun (`dotnet --version` → 10.x).
-2. Depoyu klonlayın ve proje kök dizinine girin.
+## Önemli Dosyalar
+
+| Dosya | Görev |
+|-------|-------|
+| `src/WPF/App.xaml.cs` | DI kapsayıcısı, migration uygulama, tema başlangıcı |
+| `src/WPF/ViewModels/ShellViewModel.cs` | Ana pencere navigasyonu ve tema geçişi |
+| `src/WPF/ViewModels/CatalogViewModel.cs` | Katalog arama, listeleme ve Steam içe aktarma |
+| `src/WPF/ViewModels/InstalledGamesViewModel.cs` | Kurulu oyun tarama, filtreleme ve manuel klasör ekleme |
+| `src/WPF/ViewModels/FileDiscoveryViewModel.cs` | Dil dosyası tarama ve salt okunur önizleme |
+| `src/WPF/ViewModels/TranslationViewModel.cs` | AI çeviri akışı, LM Studio bağlantısı ve sonuç incelemesi |
+| `src/Data/AppDbContext.cs` | EF Core DbSet’leri ve model yapılandırması |
+| `src/Data/Services/CatalogSyncService.cs` | Katalog kayıtlarının eklenmesi/güncellenmesi |
+| `src/Data/Services/InstalledGameScanService.cs` | Steam/manuel kurulum kayıtlarının taranması |
+| `src/Data/Services/LocalizationFileScanService.cs` | Dil dosyası adaylarının salt okunur keşfi |
+| `src/Data/Services/LocalizationPreviewService.cs` | Yol güvenliği, adaptör seçimi ve önizleme |
+| `src/Core/Services/Localization/LocalizationFormatCatalog.cs` | Formatlar, güven düzeyleri ve destek durumu |
+| `src/Core/Services/Localization/JsonContentInspector.cs` | JSON içerik/güven sinyali |
+| `src/Core/Services/Localization/Preview/Adapters/` | JSON, XML, CSV, TSV, PO, POT, INI, LocresCSV adaptörleri |
+| `src/Core/Services/Translation/TranslationEngine.cs` | Partili çeviri, iptal/devam, kalite ve günlük akışı |
+| `src/Core/Services/Translation/OpenAiCompatibleTranslationProvider.cs` | OpenAI uyumlu sağlayıcı istemcisi |
+| `tests/Tests/` | Core, Data ve WPF iş mantığı testleri |
+| `scripts/validate-project.ps1` | Build/test/Git doğrulaması ve rapor üretimi |
+
+## Çalışan Kısımlar
+
+Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulanmıştır:
+
+| Modül | Durum | Not |
+|-------|-------|-----|
+| WPF Shell ve navigasyon | ✅ Çalışıyor | Katalog, Kurulu Oyunlar, Dil Keşfi, AI Çeviri |
+| Koyu/açık tema | ✅ Çalışıyor | Tercih JSON dosyasında kalıcı |
+| Steam arama ve içe aktarma | ✅ Çalışıyor | API anahtarı gerektirmeyen arama |
+| Steam tam katalog senkronizasyonu | ✅ Çalışıyor | `STEAM_API_KEY` gerekir |
+| Steam kurulu oyun taraması | ✅ Çalışıyor | Salt okunur manifest taraması |
+| Manuel oyun klasörü ekleme | ✅ Çalışıyor | `Manual` kaynağı, doğrulanmamış ad |
+| Dil dosyası keşfi | ✅ Çalışıyor | İlerleme, iptal, yol güvenliği, SHA-256 |
+| JSON içerik/güven kontrolü | ✅ Çalışıyor | Sınırlı, salt okunur, güvenli hata durumları |
+| JSON/XML/CSV/TSV/PO/POT/INI/LocresCSV önizleme | ✅ Çalışıyor | Salt okunur |
+| Yer tutucu ve kalite kontrolleri | ✅ Çalışıyor | Çeviri ve önizleme akışında |
+| OpenAI uyumlu AI çeviri | ✅ Çalışıyor | Varsayılan yerel LM Studio; sonuçlar dosyaya yazılmaz |
+| SQLite şeması ve migration’lar | ✅ Çalışıyor | Başlangıçta otomatik migration |
+| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 596/596 test |
+
+> WPF ekranlarının tamamı otomatik UI testleriyle kapsanmaz; build/test sonuçları iş mantığını doğrular, görsel akış manuel kontrol gerektirir.
+
+## Eksik Kalan veya Henüz Başlamayan Kısımlar
+
+### Dosya yazma ve güvenli düzenleme
+
+- Oyun dosyalarına geri yazma yok.
+- Yan yana kaynak/hedef editörü yok.
+- Değişiklik öncesi yedekleme, atomik yazma, SHA-256 bütünlük doğrulaması ve geri yükleme akışı yok.
+- `BackupRecord` tablosu var ancak iş akışı bağlı değil.
+
+### Format kapsamı
+
+- `YAML`, `TXT`, `STRINGS`, `LOC` ve `MO` yalnızca keşfedilir; ayrıştırıcıları yoktur.
+- Unreal `.locres`, `.uasset` ve şifreli `.pak` içerikleri okunmuyor.
+- NTE için gerçek `.locres`/PAK doğrulaması; şifreleme ve gerekli ön koşullar nedeniyle henüz yapılamıyor.
+- UTF-8/UTF-16 dışı kodlamalar (ör. Windows-1254) reddedilir.
+
+### Mağaza ve platform kapsamı
+
+- Steam dışında katalog sağlayıcısı yok.
+- Epic Games, GOG, Ubisoft Connect, EA App ve Xbox için kurulu oyun sağlayıcısı yok.
+- Steam manifesti oyun/araç ayrımı yapmadığı için dağıtım paketleri de listelenebilir.
+
+### Çeviri ve veri
+
+- Çeviri sonuçlarını dosyaya aktarma/geri yazma yok.
+- `TranslationMemoryEntry` ve `GlossaryTerm` tabloları çeviri akışına tam bağlı değil; şu an dosya tabanlı günlük ve yerleşik sözlük kullanılıyor.
+- Sağlayıcı profili/yönetim ekranı ve API anahtarı saklama arayüzü yok; anahtar ortam değişkeninden okunur.
+- Tam katalog senkronizasyonu ve büyük dosya önizlemesi için ayrıntılı ilerleme/iptal deneyimi sınırlı.
+
+### Eklenti ve dağıtım
+
+- `IGameFormatPlugin` yalnızca arayüzdür; eklenti yükleme/kayıt sistemi yok.
+- `PluginRegistration` tablosu hazır ancak kullanılmıyor.
+- Windows MSI/EXE dağıtım paketi ve kod imzalama yok.
+
+
+## Sonraki Adımlar İçin Öneriler
+
+1. **Güvenli yazma temeli:** Yedekleme + geçici dosyaya yazma + doğrulama + atomik taşıma + geri yükleme akışını kurmak.
+2. **Editör ekranı:** Kaynak/hedef metinleri yan yana göstermek, seçili çevirileri uygulamak ve değişiklik geçmişi tutmak.
+3. **Çeviri çıktısını dışa aktarma:** AI çeviri sonuçlarını JSON/XML/CSV/PO gibi formatlara güvenli biçimde yazmak.
+4. **Format kapsamını genişletme:** Öncelik sırasıyla `MO`, `YAML`, `TXT`, `STRINGS`, `LOC` ve Unreal `.locres` araştırması.
+5. **Mağaza sağlayıcıları:** Epic, GOG, Ubisoft, EA ve Xbox için salt okunur kurulum tespiti.
+6. **Çeviri altyapısını tamamlama:** Çeviri belleği ve sözlük tablolarını akışa bağlamak; sağlayıcı profili ve güvenli anahtar yönetimi eklemek.
+7. **Eklenti sistemi:** `IGameFormatPlugin` için yükleme, sürüm uyumluluğu ve güvenlik sınırları.
+8. **Performans ve UX:** Katalog senkronizasyonu, büyük dosya önizlemesi ve uzun listeler için ilerleme, iptal ve sanallaştırma.
+9. **Dağıtım:** Windows installer, sürümleme, kod imzalama ve temiz kurulum doğrulaması.
+
+## Kurulum ve Çalıştırma
+
+Gereksinimler:
+
+- Windows 10/11
+- .NET 10 SDK
 
 ```powershell
 # Bağımlılıkları geri yükle
@@ -46,201 +304,22 @@ dotnet test ".\tests\Tests\GameLanguageExplorer.Tests.csproj" -v:minimal
 dotnet run --project ".\src\WPF\GameLanguageExplorer.WPF.csproj"
 ```
 
-Uygulama ilk açılışta veritabanı şemasını otomatik oluşturur (EF Core migration'ları
-başlangıçta uygulanır). Veritabanı dosyası:
+Salt okunur doğrulama ve rapor:
 
+```powershell
+powershell -ExecutionPolicy Bypass -File ".\scripts\validate-project.ps1"
 ```
-%LOCALAPPDATA%\GameLanguageExplorer\gamelanguageexplorer.db
-```
 
-## Arayüz: tema ve oyun paleti
-
-- **Koyu tema varsayılandır.** Sol kenar çubuğundaki düğme ile açık temaya geçilir. Renkler
-  `src/WPF/Themes/DarkTheme.xaml` ve `LightTheme.xaml` içinde **aynı anahtar setiyle** tanımlıdır;
-  görünümler renkleri `DynamicResource` ile alır ve `ThemeManager` yalnızca tema sözlüğünü değiştirir.
-  Bu nedenle tema değişikliği tüm ekranlara anında yansır.
-- **Tercih kalıcıdır ve veritabanına yazılmaz:** `%LOCALAPPDATA%\GameLanguageExplorer\ui-preferences.json`.
-  Dosya okunamaz/bozulursa uygulama sessizce koyu temaya döner (şema değişikliği yok).
-- **Oyun paleti** seçili oyunun **adına göre** *tahmini* bir vurgu rengi seçer
-  (`src/WPF/Services/GamePalette.cs`): NTE → turkuaz, Bannerlord / Mount & Blade → altın,
-  karanlık fantezi adlı oyunlar → bordo, tanınmayanlar → nötr mavi. Tahmin olduğu arayüzde
-  "tahmini" etiketi ve gerekçe metniyle belirtilir; kesin bilgi gibi sunulmaz.
-- Palet yalnızca vurgu kenarlığı, sayaç şeridi, seçili satır tonu ve rozet gibi öğeleri etkiler.
-  **Metin rengi her zaman tema renklerinden gelir** ve durumlar renkle birlikte metinle de ifade edilir.
-
-## Veri Kaynakları ve Kapsam
-
-- **Steam — isimle arama ve içe aktarma (anahtarsız, önerilen):** `store.steampowered.com/api/storesearch`
-  ile arama yapılır, `store.steampowered.com/api/appdetails` ile ad, geliştirici, yayıncı,
-  kısa açıklama, çıkış tarihi ve kapak görseli çekilir. Arama kutusuna bir ad yazıp
-  **"Steam'den Ekle"** düğmesine basın (ör. `portal`). AppID kalıcı olarak saklanır.
-- **Steam — tam katalog (API anahtarı gerekir):** Valve, anahtarsız
-  `ISteamApps/GetAppList` uç noktasını **kaldırdı** (HTTP 404). Tam katalog artık yalnızca
-  `IStoreService/GetAppList/v1` üzerinden alınabilir ve bir Web API anahtarı gerektirir.
-  `STEAM_API_KEY` ortam değişkenini tanımlayın (https://steamcommunity.com/dev/apikey),
-  ardından **"Tam Katalog Senkronize Et"** düğmesini kullanın.
-  Anahtar yoksa uygulama sessizce boş sonuç vermez; nedeni açıklayan bir hata gösterir.
-- **Kurulu oyun algılama — genel ilke:** Katalogda bir oyunun bulunması, o oyunun bilgisayarda
-  kurulu olduğu veya dil dosyalarının doğrulandığı anlamına **gelmez**. Kurulum kaydı yalnızca
-  bir sağlayıcının doğrulamasıyla veya kullanıcının açıkça eklediği klasörle oluşur.
-- **Kurulu oyun algılama (Steam, salt okunur):** Sol menüden **"Kurulu Oyunlar"** ekranına geçip
-  **"Oyunları Tara"** düğmesine basın. Tarama:
-  - Steam kök klasörünü kayıt defterinden (`HKCU\Software\Valve\Steam\SteamPath`,
-    `HKLM\...\Valve\Steam\InstallPath`) ve bilinen yollardan bulur (`STEAM_ROOT` ortam
-    değişkeniyle de geçersiz kılınabilir).
-  - `steamapps\libraryfolders.vdf` ile ek kütüphaneleri okur (yeni iç içe biçim + eski düz biçim).
-  - Her kütüphanedeki `appmanifest_*.acf` dosyalarından **AppID, oyun adı, kurulum klasörü ve boyut**
-    bilgisini çıkarır.
-  - Kurulum, klasörün varlığına değil **doğrulanmış Steam manifestine** dayanır.
-  - Hiçbir oyun dosyası değiştirilmez, taşınmaz veya silinmez (yalnızca okuma).
-- **Manuel oyun klasörü ekleme:** "Kurulu Oyunlar" ekranındadır. **"Klasör Seç"** ile oyunun
-  kurulu olduğu klasörü seçin, isterseniz oyun adını düzeltip **"Klasörü Ekle"** deyin.
-  - Kaynak `Manual` olarak yazılır; **mağaza (Steam/Epic/...) atanmaz** — kaynak doğrulanmamıştır.
-  - Oyun adı boş bırakılırsa klasör adı kullanılır ve ad **doğrulanmamış** sayılır
-    (listede "ad doğrulanmadı" etiketi görünür).
-  - Aynı klasör ikinci kez eklenirse **mükerrer kayıt oluşmaz**; farklı dizinlerdeki kurulumlar
-    ayrı kayıt olarak kalır. Mevcut katalog oyunuyla **ada göre otomatik birleştirme yapılmaz**.
-  - Var olmayan/erişilemeyen klasör reddedilir; boş klasör uyarıyla kabul edilir.
-  - Klasör sonradan silinirse kayıt **silinmez**, "kurulu değil" olarak işaretlenir.
-- **Dil dosyası keşfi (salt okunur):** Sol menüden **"Dil Dosyası Keşfi"** ekranına geçin,
-  kurulu oyunu seçin ve **"Dil Dosyalarını Tara"** düğmesine basın.
-  - Seçilen kurulum klasörü **salt okunur** taranır: hiçbir dosya değiştirilmez, silinmez,
-    yeniden adlandırılmaz (içerik ve yazma zamanı doğrulanır).
-  - Alt klasörler keşfedilir; ilerleme gösterilir ve tarama **iptal edilebilir**.
-  - Kök dizin dışına çıkılmaz; sembolik bağlantı döngüleri ve kök dışına işaret eden bağlar
-    atlanır. Erişilemeyen klasörler taramayı durdurmaz, uyarı olarak raporlanır.
-  - Aday formatlar: `JSON, XML, CSV, TSV, PO, POT, INI, YAML/YML, TXT, STRINGS, LOC`
-    (düz metin) ve `MO` (ikili). Ayrıca `PAK, BUNDLE, ARCHIVE, ASSETS, UASSET, BANK`
-    paketleri **metin olarak sınıflandırılmaz**.
-  - Her aday için **uzantı, boyut, format, güven düzeyi, destek durumu ve aday olma gerekçesi**
-    gösterilir. Uzantı eşleşmesi tek başına en fazla `Düşük` güven verir.
-  - Tekrar tarama **mükerrer kayıt oluşturmaz** (kurulum + yol benzersizdir).
-  - Silinmiş dosyaların kayıtları **silinmez**; yalnızca "artık bulunamadı" olarak işaretlenir
-    ve bu işaretleme **yalnızca eksiksiz** (hatasız ve iptal edilmemiş) taramada yapılır.
-- **Metin önizleme (salt okunur ayrıştırma):** "Dil Dosyası Keşfi" ekranında bir aday dosya seçip
-  **"Metinleri Önizle"** düğmesine basın.
-  - **Desteklenen ayrıştırıcılar:** `JSON`, `XML`, `CSV`, `TSV`, `PO`, `POT`, `INI`, `LocresCSV`
-    (`key,source,Translation`). Diğer formatlar ve tüm paketler önizlenemez ("Bu format için ayrıştırıcı yok").
-  - Dosya açılmadan **önce** yolun seçili kurulum dizini içinde olduğu doğrulanır; kök dışındaki
-    yollar reddedilir.
-  - Dosya **salt okunur** okunur; hiçbir şey yazılmaz, yeniden serileştirilmez.
-  - Her kayıt için **yapısal konum** (JSON Pointer / XPath benzeri yol / satır–sütun), **orijinal
-    metin**, **değişken/biçimlendirme işaretleri**, **durum** (çevrilebilir / belirsiz / atlandı) ve
-    **kanıt** gösterilir.
-  - JSON'da sayı/boolean/null çeviri adayı olarak sunulmaz; XML'de etiket ve attribute **adları**
-    metin sayılmaz; CSV'de sayısal hücreler bağlama göre "atlandı" veya "belirsiz" işaretlenir.
-  - Aynı metin iki farklı konumda geçse kayıtlar **birleştirilmez**.
-  - XML ayrıştırmasında DTD kapalı ve harici çözümleyici yoktur (**XXE engellenir**).
-  - **PO/POT:** `msgctxt`, çok satırlı dizeler ve kaçışlar çözülür; **her çoğul biçim ayrı kayıt**
-    olarak gösterilir (birleştirilmez), `#, fuzzy` kayıtları "Belirsiz" işaretlenir, mevcut
-    `msgstr` çevirisi ikinci satırda görünür. Başlık kaydı meta veri olarak "Atlandı" listelenir.
-  - **INI:** `[Bölüm]` bağlamı ve dosya sırası korunur; ilk `=` ayırıcıdır; boş/sayısal/yol
-    değerleri atlanır. Dosya teknik ayar dosyasına benziyorsa ayrıca **uyarı** gösterilir.
-  - Bozuk sözdizimi, çözülemeyen kodlama ve aşırı büyük dosya (varsayılan 32 MB) **hata mesajıyla**
-    bildirilir; uygulama çökmez.
-  - Bu aşamada **düzenleme, çeviri ve dosyaya yazma yoktur**; ayrıştırma sırasında ilerleme/iptal
-    sunulmaz (tek dosya işlemi olduğu arayüzde belirtilir).
-- **Dil dosyası formatları**: Okuma (ayrıştırma) JSON/XML/CSV/TSV için var; **yazma yoktur**.
-  Ayrıntılar: [SUPPORTED-FORMATS.md](SUPPORTED-FORMATS.md).
-
-### Kaynak destek durumu
-
-| Kaynak | Durum | Not |
-|--------|-------|-----|
-| Steam | ✅ Uygulandı | `appmanifest_*.acf` + `libraryfolders.vdf`, salt okunur |
-| Manuel klasör | ✅ Uygulandı | Kullanıcı seçimi; mağaza doğrulanmaz |
-| Epic Games | ⏳ Planlandı | `.item` manifestleri henüz okunmuyor |
-| GOG | ⏳ Planlandı | Galaxy kayıtları henüz okunmuyor |
-| Ubisoft Connect | ⏳ Planlandı | Yerel kurulum kayıtları henüz okunmuyor |
-| EA App | ⏳ Planlandı | Yerel kurulum kayıtları henüz okunmuyor |
-| Xbox / Microsoft Store | ⏳ Planlandı | MSIX paket metadata'sı henüz okunmuyor |
-
-Planlanan kaynaklar yalnızca **bilgi olarak** listelenir (arayüzdeki "Kaynaklar ve destek durumu"
-bölümü); destekleniyormuş gibi davranmaz ve tarama sonucuna kayıt eklemez.
-
-### Tarama güvenilirliği (R1)
-
-Bir sağlayıcının taraması üç durumdan biriyle döner: `Completed`, `Unavailable`, `Failed`;
-ayrıca **kısmi** olabilir (bazı kütüphaneler/manifestler okunamadı).
-
-- Yalnızca `Completed` tarama kayıt **ekler/günceller**.
-- Yalnızca **eksiksiz** `Completed` tarama, o kaynağın önceki kayıtlarını "kurulu değil"
-  işaretleyebilir.
-- `Unavailable` (ör. Steam kurulu değil), `Failed` veya **kısmi** tarama mevcut kayıtları
-  **korur**: hiçbir kayıt silinmez, "kurulu değil" yapılmaz. Arayüz bunu uyarı şeridinde bildirir.
-- Boş ama başarılı bir tarama ile başarısız bir tarama **aynı şey değildir**.
-
-## Geliştirme Aşamaları
-
-Proje 9 aşamada geliştirilmektedir. Mevcut durum: **Aşama 1 tamamlandı, Aşama 2 kısmen tamamlandı.**
-
-| Aşama | Açıklama | Durum |
-|-------|----------|-------|
-| 1 | Proje iskeleti, WPF arayüzü, SQLite ve dokümantasyon | ✅ Tamamlandı |
-| 2 | Global Game Catalog, ilk katalog sağlayıcısı ve oyun arama ekranı | 🟡 Kısmen tamamlandı — Steam kataloğu senkronizasyonu ve arama çalışıyor; oyun profili / kaynak-doğrulama ekranı yok |
-| 3 | Her oyun için ayrıntılı profil ve kaynak/doğrulama altyapısı | ⏳ Beklemede (yalnızca veri modeli hazır) |
-| 4 | Steam, Epic ve Ubisoft kurulu oyun keşfi | 🟡 Kısmen tamamlandı — Steam taraması ve manuel klasör ekleme çalışıyor (salt okunur); Epic/Ubisoft/GOG/EA/Xbox yok |
-| 5 | Dil dosyası tarama, format tanıma ve ilk editör | 🟡 Kısmen tamamlandı — keşif + JSON/XML/CSV/TSV okuma ve önizleme çalışıyor; editör, çeviri ve yazma yok |
-| 6 | Yedekleme, güvenli dışa aktarma ve geri yükleme | ⏳ Beklemede (yalnızca `BackupRecord` tablosu var) |
-| 7 | Eklenti sistemi ve motor özelindeki formatlar | ⏳ Beklemede (yalnızca arayüzler tanımlı) |
-| 8 | AI ile Türkçe çeviri | ⏳ Beklemede |
-| 9 | Diğer mağazalar, performans, testler ve Windows dağıtımı | ⏳ Beklemede |
-
-## Bilinen Sınırlamalar
-
-- **Steam senkronizasyonu tam katalog üzerinde çalışır.** `GetAppList/v2` yaklaşık 250.000
-  kayıt döndürür; ilk senkronizasyon uzun sürebilir ve UI işlem sırasında yanıt vermeyebilir.
-  Sonraki aşamada ilerleme raporlama ve iptal düğmesi eklenmelidir.
-- Steam yalnızca AppID + ad verir; geliştirici/yayıncı/açıklama alanları boş kalır.
-- Steam dışında katalog sağlayıcısı yoktur.
-- Kurulu oyun tarama, format tanıma, editör, yedekleme ve AI çeviri ekranları henüz yoktur;
-  navigasyon menüsündeki düğmelerin bir kısmı yer tutucudur.
-- Katalog eşleştirmesi AppID yoksa oyun adına göre yapılır (aynı adlı farklı oyunlar
-  birleşebilir).
-- **Kurulu oyun taraması yalnızca Steam + manuel klasörü destekler.** Epic/GOG/Ubisoft/EA/Xbox
-  için `IInstalledGameProvider` uygulaması yoktur; `GameSourceCatalog`'da `Planned` olarak
-  işaretlidirler ve arayüzde "destekleniyor" gibi gösterilmez.
-- Manuel eklenen kayıtların oyun adı kullanıcı tarafından verilir; **doğrulanmamış** kabul edilir.
-  Bu kayıtlar için mağaza/platform bilgisi oluşturulmaz ve ada göre otomatik katalog eşleştirmesi
-  yapılmaz (yanlış birleştirmeyi önlemek için bilinçli tercih).
-- Bu aşamada **şema değişikliği yapılmadı** (yeni migration yok): doğrulanmamış kaynak bilgisi
-  mevcut `InstallSource = "Manual"` alanıyla, doğrulanmamış ad da arayüzdeki etiketle temsil edilir.
-- Steam manifesti oyun/araç ayrımı yapmaz; bu yüzden `Steamworks Common Redistributables`
-  gibi dağıtım paketleri de listelenir.
-- Aynı klasörü paylaşan iki farklı Steam uygulaması (ör. oyun + modlama kiti) iki ayrı
-  kurulum kaydı olarak görünür — bu bilinçli bir davranıştır.
-- Tarama dosya **içeriğini** analiz etmez; yalnızca uzantı, dosya/klasör adı ve boyut gibi
-  **metadata** kullanılır. İçerik doğrulaması (magic bytes, header) ve ayrıştırma henüz yoktur.
-- **Hiçbir format için yazma desteği yoktur.** Okuma yalnızca `JSON`, `XML`, `CSV`, `TSV`, `PO`,
-  `POT`, `INI`, `LocresCSV` ile sınırlıdır; `YAML`, `TXT`, `STRINGS`, `LOC`, `MO` hâlâ yalnızca keşfedilir,
-  ayrıştırılamaz. `ILocalizationFormatAdapter.SupportsWrite` daima `false`'tur.
-- **Önizleme veritabanına yazmaz.** Ayrıştırılan metinler geçici (in-memory) modeldir;
-  `LocalizationProject`/`LocalizationEntry` tabloları bu aşamada kullanılmaz.
-- Önizleme tek dosya içindir: **ilerleme ve iptal yoktur**; büyük dosyalarda düğme birkaç saniye
-  yanıt vermeyebilir.
-- UTF-8/UTF-16 dışı kodlamalar (ör. Windows-1254) **reddedilir** (hata mesajı gösterilir); otomatik
-  kodlama tahmini yoktur. `.json` uzantılı ikili dosyalar (ör. macOS `__MACOSX/._*`) bu sayede
-  güvenle reddedilir.
-- Ayrıştırıcılar içeriğin gerçekten yerelleştirme olduğunu **doğrulamaz**: örneğin bir oyunun
-  yama/konfig JSON'ları da başarıyla ayrıştırılır. Uygunluk değerlendirmesi kullanıcıya aittir.
-- CSV'de ayraç otomatik algılanır (` , ; \t |`); algılanamazsa uyarı verilir. Başlık satırı
-  sezgisel tespit edilir; yanlış tespit olasılığı "başlık algılanmadı" uyarısıyla sınırlanır.
-- Paketlerin (`.pak`, `.uasset`, `.bundle`, `.archive`, `.assets`, `.bank`) içine bakılmaz;
-  yalnızca dosya/klasör adında ipucu varsa listeye alınır ve **desteklenmiyor** olarak işaretlenir.
-- SHA-256 yalnızca adaylar için hesaplanır ve 64 MB'tan büyük dosyalarda atlanır
-  (`Sha256` boş bırakılır, nedeni kayıtta yazılır).
-- Sembolik bağlantı/junction **döngüleri** gerçek yol karşılaştırmasıyla engellenir; ancak test
-  ortamında bağ oluşturmak yönetici izni gerektirdiği için bu senaryo yalnızca birim testleriyle
-  (yol karşılaştırma kuralları) doğrulanmıştır.
+AI çeviri için varsayılan yerel LM Studio uç noktası `http://127.0.0.1:1234/v1` olarak ayarlıdır. Kimlik doğrulaması gereken bir sağlayıcı kullanılacaksa `GLE_LLM_API_KEY` ortam değişkeni tanımlanabilir.
 
 ## Dokümantasyon
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Mimari ve tasarım
-- [ROADMAP.md](ROADMAP.md) - Geliştirme yol haritası
-- [SUPPORTED-FORMATS.md](SUPPORTED-FORMATS.md) - Desteklenen dosya formatları
-- [NTE-LOCALIZATION-RESEARCH.md](NTE-LOCALIZATION-RESEARCH.md) - NTE yerelleştirme araştırması ve doğrulama sınırları
-- [CATALOG-SOURCES.md](CATALOG-SOURCES.md) - Katalog kaynakları
-- [SECURITY.md](SECURITY.md) - Güvenlik politikası
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Katmanlar, mimari ve güvenlik sınırları
+- [ROADMAP.md](ROADMAP.md) — Geliştirme aşamaları
+- [SUPPORTED-FORMATS.md](SUPPORTED-FORMATS.md) — Format destek matrisi ve ayrıştırma kuralları
+- [CATALOG-SOURCES.md](CATALOG-SOURCES.md) — Katalog kaynakları
+- [NTE-LOCALIZATION-RESEARCH.md](NTE-LOCALIZATION-RESEARCH.md) — NTE araştırması ve doğrulama sınırları
+- [SECURITY.md](SECURITY.md) — Güvenlik politikası
 
 ## Lisans
 
