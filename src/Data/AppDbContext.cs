@@ -142,7 +142,23 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.SourceLanguage).IsRequired().HasMaxLength(32);
             entity.Property(e => e.TargetLanguage).IsRequired().HasMaxLength(32);
-            entity.HasIndex(e => new { e.SourceText, e.SourceLanguage, e.TargetLanguage });
+            entity.Property(e => e.ScopeKey).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.Context).IsRequired();
+            entity.Property(e => e.PluralIndex).IsRequired();
+            entity.Property(e => e.PluralCount).IsRequired();
+
+            // Bağlam/çoğul/kapsam kimliği benzersizdir. Tüm bileşenler non-null olduğu
+            // için SQLite'ta NULL nedeniyle indeksin etkisiz kalması önlenir.
+            entity.HasIndex(e => new
+            {
+                e.SourceText,
+                e.SourceLanguage,
+                e.TargetLanguage,
+                e.ScopeKey,
+                e.Context,
+                e.PluralIndex,
+                e.PluralCount
+            }).IsUnique();
         });
 
         modelBuilder.Entity<BackupRecord>(entity =>

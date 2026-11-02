@@ -78,7 +78,7 @@ public sealed class BackupManagementService : IBackupManagementService
         var backupDirectory = ResolveBackupDirectory();
         var backupPath = PathSafety.TryNormalize(record.BackupFilePath);
 
-        if (backupPath is null || !PathSafety.IsUnderRoot(backupPath, backupDirectory))
+        if (backupPath is null || !PathSafety.IsUnderRootResolved(backupPath, backupDirectory))
         {
             return new BackupDeleteResult(
                 BackupDeleteStatus.PathRejected,

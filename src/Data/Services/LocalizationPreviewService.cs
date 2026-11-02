@@ -5,6 +5,7 @@ using GameLanguageExplorer.Core.Interfaces;
 using GameLanguageExplorer.Core.Services;
 using GameLanguageExplorer.Core.Services.Localization;
 using GameLanguageExplorer.Core.Services.Localization.Preview;
+using GameLanguageExplorer.Core.Services.Translation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -153,12 +154,13 @@ public sealed class LocalizationPreviewService : ILocalizationPreviewService
                 file.FilePath, fileName);
         }
 
-        // Dosya AÇILMADAN önce kök sınırı kontrolü.
-        if (!PathSafety.IsUnderRoot(path, root))
+        // Dosya AÇILMADAN önce metinsel ve bağlantı çözümlü kök sınırı kontrolü.
+        if (!PathSafety.IsUnderRootResolved(path, root))
         {
             return LocalizationPreviewResult.Reject(
                 LocalizationPreviewFailureKind.PathRejected,
-                $"Dosya seçili kurulum dizininin dışında; önizleme reddedildi. Kök: '{root}'.",
+                $"Dosya seçili kurulum dizininin dışında veya güvenilir biçimde kök altında " +
+                $"çözümlenemedi; önizleme reddedildi. Kök: '{root}'.",
                 path, fileName);
         }
 
@@ -193,6 +195,12 @@ public sealed class LocalizationPreviewService : ILocalizationPreviewService
             result.ErrorMessage = $"Dosya diskte bulunamadı: '{path}'.";
             return result;
         }
+
+        // Önizleme ile yazma aynı kaynak sürümüne bağlanır. Dosya okuma sırasında
+        // değişirse yazma aşaması bu hash karşılaştırmasıyla reddedilir.
+        result.SourceSha256 = await FileFingerprint
+            .ComputeSha256Async(path, cancellationToken)
+            .ConfigureAwait(false);
 
         var read = await adapter.ReadAsync(path, _options, cancellationToken).ConfigureAwait(false);
 

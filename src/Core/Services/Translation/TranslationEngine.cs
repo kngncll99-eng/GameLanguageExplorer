@@ -346,7 +346,7 @@ public sealed class TranslationEngine : ITranslationEngine
 
         if (!cancelled && failureKind == TranslationRunFailureKind.None)
         {
-            await SaveTranslationMemoryAsync(finalUnits, normalizedRequest, warnings)
+            await SaveTranslationMemoryAsync(finalUnits, plans, normalizedRequest, warnings)
                 .ConfigureAwait(false);
         }
 
@@ -582,6 +582,28 @@ public sealed class TranslationEngine : ITranslationEngine
         return HashText(material);
     }
 
+    private static TranslationMemoryContext BuildMemoryContext(
+        TranslationEngineRequest request,
+        LocalizationTextEntry entry) =>
+        new(
+            $"game:{request.InstalledGameId}",
+            entry.Context ?? string.Empty,
+            entry.PluralIndex,
+            entry.PluralCount);
+
+    private static string BuildMemoryMatchKey(
+        string sourceText,
+        TranslationMemoryContext context) =>
+        string.Join(
+            "\u001F",
+            sourceText,
+            context.ScopeKey,
+            context.Context,
+            context.PluralIndex?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                ?? string.Empty,
+            context.PluralCount?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                ?? string.Empty);
+
     /// <summary>
     /// AI çağrısından önce tam eşleşmeli çeviri belleğini uygular. Sonuçlar yalnızca
     /// kalite kontrolünden geçen kayıtlar için <see cref="TranslationUnitStatus.Reused"/> olur.
@@ -613,16 +635,19 @@ public sealed class TranslationEngine : ITranslationEngine
                 }
 
                 var source = plan.Entry.SourceText;
+                var memoryContext = BuildMemoryContext(request, plan.Entry);
+                var matchKey = BuildMemoryMatchKey(source, memoryContext);
 
-                if (!matches.TryGetValue(source, out var translation))
+                if (!matches.TryGetValue(matchKey, out var translation))
                 {
                     translation = await _translationMemory.FindExactAsync(
                             source,
                             request.SourceLanguage,
                             request.TargetLanguage,
+                            memoryContext,
                             cancellationToken)
                         .ConfigureAwait(false);
-                    matches[source] = translation;
+                    matches[matchKey] = translation;
                 }
 
                 if (string.IsNullOrWhiteSpace(translation))
@@ -655,6 +680,7 @@ public sealed class TranslationEngine : ITranslationEngine
     /// <summary>Otomatik kabul edilen yeni çevirileri, yinelenen kayıt oluşturmadan belleğe yazar.</summary>
     private async Task SaveTranslationMemoryAsync(
         IReadOnlyList<TranslationUnitResult> units,
+        IReadOnlyList<EntryPlan> plans,
         TranslationEngineRequest request,
         List<string> warnings)
     {
@@ -663,7 +689,10 @@ public sealed class TranslationEngine : ITranslationEngine
             return;
         }
 
-        var savedSources = new HashSet<string>(StringComparer.Ordinal);
+        var planByUnitId = plans
+            .GroupBy(plan => plan.UnitId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var savedKeys = new HashSet<string>(StringComparer.Ordinal);
 
         try
         {
@@ -671,7 +700,14 @@ public sealed class TranslationEngine : ITranslationEngine
             {
                 if (unit.Status != TranslationUnitStatus.Candidate
                     || string.IsNullOrWhiteSpace(unit.Translation)
-                    || !savedSources.Add(unit.SourceText))
+                    || !planByUnitId.TryGetValue(unit.UnitId, out var plan))
+                {
+                    continue;
+                }
+
+                var memoryContext = BuildMemoryContext(request, plan.Entry);
+
+                if (!savedKeys.Add(BuildMemoryMatchKey(unit.SourceText, memoryContext)))
                 {
                     continue;
                 }
@@ -681,6 +717,7 @@ public sealed class TranslationEngine : ITranslationEngine
                         unit.Translation,
                         request.SourceLanguage,
                         request.TargetLanguage,
+                        memoryContext,
                         CancellationToken.None)
                     .ConfigureAwait(false);
             }

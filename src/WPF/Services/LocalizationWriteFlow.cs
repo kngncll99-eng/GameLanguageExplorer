@@ -31,6 +31,7 @@ public static class LocalizationWriteFlow
         string failurePrefix,
         Action? onConfirmed,
         IProgress<LocalizationWriteProgress>? progress,
+        string? expectedSourceSha256,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(confirmationService);
@@ -62,7 +63,8 @@ public static class LocalizationWriteFlow
                     discoveredFileId,
                     translations,
                     cancellationToken,
-                    progress)
+                    progress,
+                    expectedSourceSha256)
                 .ConfigureAwait(true);
 
             return result.Success

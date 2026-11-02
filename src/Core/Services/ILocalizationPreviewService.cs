@@ -39,6 +39,12 @@ public sealed class LocalizationPreviewResult
 
     public string? FormatKey { get; set; }
 
+    /// <summary>
+    /// Önizlemenin okunduğu kaynak sürümün SHA-256 değeri. Yazma sırasında dosyanın
+    /// bu sürümden sapmadığını doğrulamak için kullanılır.
+    /// </summary>
+    public string? SourceSha256 { get; set; }
+
     /// <summary>Kullanılan adaptörün görünen adı (yoksa <c>null</c>).</summary>
     public string? AdapterName { get; set; }
 

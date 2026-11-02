@@ -14,6 +14,8 @@ namespace GameLanguageExplorer.WPF.ViewModels;
 /// <summary>Editör tablosunda gösterilen ve düzenlenebilen tek bir metin kaydı.</summary>
 public sealed partial class EditorEntryRow : ObservableObject
 {
+    private string _originalTranslation;
+
     public EditorEntryRow(LocalizationTextEntry entry, bool canEdit)
     {
         Key = entry.Key;
@@ -30,7 +32,8 @@ public sealed partial class EditorEntryRow : ObservableObject
         ContextText = entry.Context ?? string.Empty;
         SkipReason = entry.SkipReason ?? string.Empty;
         PlaceholderText = entry.Placeholders.HasPlaceholders ? entry.Placeholders.Display : "—";
-        _translationText = entry.ExistingTranslation ?? string.Empty;
+        _originalTranslation = entry.ExistingTranslation ?? string.Empty;
+        _translationText = _originalTranslation;
     }
 
     [ObservableProperty]
@@ -45,11 +48,19 @@ public sealed partial class EditorEntryRow : ObservableObject
     public bool IsSkipped { get; }
     public bool IsEditable { get; }
 
-    /// <summary>Kaynak metinden farklı, boş olmayan bir çeviri girildi mi?</summary>
+    /// <summary>Dosya açıldığında var olan çeviri (değişiklik takibinin başlangıç değeri).</summary>
+    public string OriginalTranslation => _originalTranslation;
+
+    /// <summary>Başlangıç değerine göre değişti mi? Boş çeviri politikası ayrıca uygulanır.</summary>
     public bool IsChanged =>
         IsEditable
-        && !string.IsNullOrWhiteSpace(TranslationText)
-        && !string.Equals(TranslationText, SourceText, StringComparison.Ordinal);
+        && !string.Equals(TranslationText, _originalTranslation, StringComparison.Ordinal);
+
+    /// <summary>Başarılı kayıttan sonra değişiklik takibinin yeni başlangıç değerini kabul eder.</summary>
+    public void AcceptChanges() => _originalTranslation = TranslationText;
+
+    partial void OnTranslationTextChanged(string value) =>
+        OnPropertyChanged(nameof(IsChanged));
 }
 
 /// <summary>
@@ -67,7 +78,18 @@ public partial class EditorViewModel : ViewModelBase
     private readonly IReadOnlyCollection<string> _writableExtensions;
     private readonly IReadOnlyCollection<string> _writableFormatKeys;
 
+    private CancellationTokenSource? _loadCts;
     private CancellationTokenSource? _saveCts;
+    private int _loadRequestId;
+    private int _saveRequestId;
+    private LoadedFileSnapshot? _loadedFile;
+
+    private sealed record LoadedFileSnapshot(
+        int InstalledGameId,
+        int DiscoveredFileId,
+        string FilePath,
+        string FileName,
+        string? SourceSha256);
 
     [ObservableProperty]
     private InstalledGame? _selectedGame;
@@ -152,11 +174,15 @@ public partial class EditorViewModel : ViewModelBase
 
     partial void OnSelectedGameChanged(InstalledGame? value)
     {
+        CancelPendingLoad();
+        _loadedFile = null;
         LoadFiles();
     }
 
     partial void OnSelectedFileChanged(DiscoveredFileRow? value)
     {
+        CancelPendingLoad();
+        _loadedFile = null;
         Entries.Clear();
         SelectedEntry = null;
         EntryCount = 0;
@@ -170,6 +196,34 @@ public partial class EditorViewModel : ViewModelBase
         OnPropertyChanged(nameof(ChangedCount));
         OnPropertyChanged(nameof(IsEditableFile));
     }
+
+    /// <summary>
+    /// Önizleme isteğini geçersiz kılar. İptal gecikse bile istek kimliği ve seçim
+    /// karşılaştırması sayesinde eski sonuç yeni dosyaya uygulanmaz.
+    /// </summary>
+    private void CancelPendingLoad()
+    {
+        _loadRequestId++;
+        _loadCts?.Cancel();
+        _loadCts = null;
+
+        if (IsLoading)
+        {
+            IsLoading = false;
+            LoadEntriesCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool IsCurrentLoad(
+        int requestId,
+        InstalledGame game,
+        DiscoveredFileRow file,
+        CancellationTokenSource cts) =>
+        requestId == _loadRequestId
+        && ReferenceEquals(_loadCts, cts)
+        && !cts.IsCancellationRequested
+        && SelectedGame?.Id == game.Id
+        && SelectedFile?.Id == file.Id;
 
     partial void OnIsEditingEnabledChanged(bool value)
     {
@@ -254,10 +308,15 @@ public partial class EditorViewModel : ViewModelBase
 
     private async Task LoadEntriesCoreAsync(bool preserveStatus)
     {
-        if (!CanLoadEntries() || SelectedGame is null || SelectedFile is null)
+        if (!CanLoadEntries() || SelectedGame is not { } game || SelectedFile is not { } file)
         {
             return;
         }
+
+        CancelPendingLoad();
+        var requestId = _loadRequestId;
+        var cts = new CancellationTokenSource();
+        _loadCts = cts;
 
         IsLoading = true;
         ErrorMessage = null;
@@ -277,8 +336,15 @@ public partial class EditorViewModel : ViewModelBase
         {
             StatusMessage = "Metinler yükleniyor…";
             var preview = await _previewService
-                .PreviewAsync(SelectedGame.Id, SelectedFile.Id)
+                .PreviewAsync(game.Id, file.Id, cts.Token)
                 .ConfigureAwait(true);
+
+            if (!IsCurrentLoad(requestId, game, file, cts)
+                || preview.InstalledGameId != game.Id
+                || preview.DiscoveredFileId != file.Id)
+            {
+                return;
+            }
 
             if (!preview.Success)
             {
@@ -289,32 +355,53 @@ public partial class EditorViewModel : ViewModelBase
 
             foreach (var entry in preview.Entries)
             {
-                var row = new EditorEntryRow(entry, IsEntryEditable(SelectedFile, entry));
+                var row = new EditorEntryRow(entry, IsEntryEditable(file, entry));
                 row.PropertyChanged += OnEntryPropertyChanged;
                 Entries.Add(row);
             }
 
             EntryCount = Entries.Count;
-            IsEditingEnabled = SelectedFile.SupportsWrite;
+            IsEditingEnabled = file.SupportsWrite;
+            _loadedFile = new LoadedFileSnapshot(
+                game.Id,
+                file.Id,
+                preview.FilePath,
+                file.FileName,
+                preview.SourceSha256);
             WarningMessage = preview.Warnings.Count == 0
                 ? null
                 : string.Join(" | ", preview.Warnings.Take(4));
-            StatusMessage = SelectedFile.SupportsWrite
+            StatusMessage = file.SupportsWrite
                 ? $"{EntryCount} kayıt yüklendi; {ChangedCount} değişiklik var."
                 : $"{EntryCount} kayıt salt okunur yüklendi. Bu dosya türünde düzenleme kapalı.";
             OnPropertyChanged(nameof(HasEntries));
             OnPropertyChanged(nameof(ChangedCount));
         }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Seçim değişti; eski isteğin sonucu hiçbir UI alanına uygulanmaz.
+        }
         catch (Exception exception)
         {
+            if (!IsCurrentLoad(requestId, game, file, cts))
+            {
+                return;
+            }
+
             ErrorMessage = "Metinler yüklenemedi: " + exception.Message;
             StatusMessage = null;
         }
         finally
         {
-            IsLoading = false;
-            LoadEntriesCommand.NotifyCanExecuteChanged();
-            SaveCommand.NotifyCanExecuteChanged();
+            cts.Dispose();
+
+            if (ReferenceEquals(_loadCts, cts))
+            {
+                _loadCts = null;
+                IsLoading = false;
+                LoadEntriesCommand.NotifyCanExecuteChanged();
+                SaveCommand.NotifyCanExecuteChanged();
+            }
         }
     }
 
@@ -356,8 +443,22 @@ public partial class EditorViewModel : ViewModelBase
 
     private async Task SaveAsync()
     {
-        if (!CanSave() || SelectedGame is null || SelectedFile is null || _writeService is null)
+        if (!CanSave()
+            || SelectedGame is not { } game
+            || SelectedFile is not { } file
+            || _writeService is null)
         {
+            return;
+        }
+
+        var loadedFile = _loadedFile;
+
+        if (loadedFile is null
+            || loadedFile.InstalledGameId != game.Id
+            || loadedFile.DiscoveredFileId != file.Id)
+        {
+            SaveErrorMessage = "Dosya yeniden yüklenmeden kaydedilemez; seçili dosyayı yenileyin.";
+            SaveStatusMessage = null;
             return;
         }
 
@@ -372,18 +473,21 @@ public partial class EditorViewModel : ViewModelBase
             return;
         }
 
-        _saveCts = new CancellationTokenSource();
+        var requestId = ++_saveRequestId;
+        var cts = new CancellationTokenSource();
+        _saveCts = cts;
 
         try
         {
-            var progress = new Progress<LocalizationWriteProgress>(ApplySaveProgress);
+            var progress = new Progress<LocalizationWriteProgress>(
+                value => ApplySaveProgress(requestId, game.Id, file.Id, value));
             var outcome = await LocalizationWriteFlow.ExecuteAsync(
                     _confirmationService!,
                     _writeService,
-                    SelectedGame.Id,
-                    SelectedFile.Id,
+                    loadedFile.InstalledGameId,
+                    loadedFile.DiscoveredFileId,
                     changes,
-                    SelectedFile.FileName,
+                    loadedFile.FileName,
                     "Değişiklikleri Kaydet",
                     "kayıt değiştirilecek.",
                     "Kaydetme işlemi kullanıcı tarafından iptal edildi.",
@@ -397,28 +501,62 @@ public partial class EditorViewModel : ViewModelBase
                         SaveStatusMessage = "Güvenli kaydetme hazırlanıyor…";
                     },
                     progress,
-                    _saveCts.Token)
+                    loadedFile.SourceSha256,
+                    cts.Token)
                 .ConfigureAwait(true);
+
+            if (!IsCurrentSave(requestId, game.Id, file.Id, cts))
+            {
+                return;
+            }
 
             SaveProgressPercent = outcome.ProgressPercent;
             SaveErrorMessage = outcome.ErrorMessage;
 
             if (outcome.Success)
             {
+                foreach (var entry in Entries)
+                {
+                    entry.AcceptChanges();
+                }
+
+                OnPropertyChanged(nameof(ChangedCount));
+                SaveCommand.NotifyCanExecuteChanged();
+
                 // Başarılı yazmadan sonra kaynak metinler değiştiği için tabloyu yenile.
                 IsSaving = false;
                 await LoadEntriesCoreAsync(preserveStatus: true).ConfigureAwait(true);
+
+                if (!IsCurrentSave(requestId, game.Id, file.Id, cts))
+                {
+                    return;
+                }
             }
 
             SaveStatusMessage = outcome.StatusMessage;
         }
         finally
         {
-            _saveCts?.Dispose();
-            _saveCts = null;
-            IsSaving = false;
+            cts.Dispose();
+
+            if (ReferenceEquals(_saveCts, cts))
+            {
+                _saveCts = null;
+                IsSaving = false;
+            }
         }
     }
+
+    private bool IsCurrentSave(
+        int requestId,
+        int installedGameId,
+        int discoveredFileId,
+        CancellationTokenSource cts) =>
+        requestId == _saveRequestId
+        && ReferenceEquals(_saveCts, cts)
+        && !cts.IsCancellationRequested
+        && SelectedGame?.Id == installedGameId
+        && SelectedFile?.Id == discoveredFileId;
 
     private void CancelSave()
     {
@@ -431,10 +569,18 @@ public partial class EditorViewModel : ViewModelBase
         _saveCts?.Cancel();
     }
 
-    private void ApplySaveProgress(LocalizationWriteProgress progress)
+    private void ApplySaveProgress(
+        int requestId,
+        int installedGameId,
+        int discoveredFileId,
+        LocalizationWriteProgress progress)
     {
-        // Progress<T> callback'i tamamlanma sonrası gelebilir; nihai başarı/hata mesajını ezme.
-        if (!IsSaving)
+        // Progress<T> callback'i tamamlanma veya seçim değişikliğinden sonra gelebilir.
+        // Yalnızca hâlâ geçerli olan yazma isteğinin ilerlemesi gösterilir.
+        if (!IsSaving
+            || requestId != _saveRequestId
+            || SelectedGame?.Id != installedGameId
+            || SelectedFile?.Id != discoveredFileId)
         {
             return;
         }

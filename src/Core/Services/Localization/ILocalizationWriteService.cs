@@ -32,7 +32,8 @@ public enum LocalizationWriteStatus
     VerificationFailed = 8,
     Restored = 9,
     RestoreFailed = 10,
-    Cancelled = 11
+    Cancelled = 11,
+    UnsupportedEncoding = 12
 }
 
 /// <summary>Güvenli yazma sonucu. Başarısız olsa bile yedek bilgisi taşır.</summary>
@@ -61,6 +62,12 @@ public sealed class LocalizationWriteOptions
 
     /// <summary>Yedekleme ve doğrulama için en büyük dosya boyutu (varsayılan 32 MB).</summary>
     public long MaxFileBytes { get; init; } = 32L * 1024 * 1024;
+
+    /// <summary>
+    /// Dosya değiştirildikten sonra doğrulama/DB/kurtarma adımları için kullanılan
+    /// kullanıcı iptalinden bağımsız süre sınırı (varsayılan 30 saniye).
+    /// </summary>
+    public TimeSpan RecoveryTimeout { get; init; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>
@@ -74,7 +81,8 @@ public interface ILocalizationWriteService
         int discoveredFileId,
         IReadOnlyDictionary<string, string> translations,
         CancellationToken cancellationToken = default,
-        IProgress<LocalizationWriteProgress>? progress = null);
+        IProgress<LocalizationWriteProgress>? progress = null,
+        string? expectedSourceSha256 = null);
 
     /// <summary>Daha önce oluşturulan bir yedeği açıkça geri yükler.</summary>
     Task<LocalizationWriteResult> RestoreAsync(

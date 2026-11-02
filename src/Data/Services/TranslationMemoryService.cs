@@ -20,6 +20,7 @@ public sealed class TranslationMemoryService : ITranslationMemory
         string sourceText,
         string sourceLanguage,
         string targetLanguage,
+        TranslationMemoryContext context,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sourceText)
@@ -31,6 +32,7 @@ public sealed class TranslationMemoryService : ITranslationMemory
 
         var source = sourceLanguage.Trim();
         var target = targetLanguage.Trim();
+        var (scope, contextText, pluralIndex, pluralCount) = Normalize(context);
 
         await using var db = await _dbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -40,7 +42,11 @@ public sealed class TranslationMemoryService : ITranslationMemory
             .FirstOrDefaultAsync(
                 item => item.SourceText == sourceText
                         && item.SourceLanguage == source
-                        && item.TargetLanguage == target,
+                        && item.TargetLanguage == target
+                        && item.ScopeKey == scope
+                        && item.Context == contextText
+                        && item.PluralIndex == pluralIndex
+                        && item.PluralCount == pluralCount,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -61,6 +67,7 @@ public sealed class TranslationMemoryService : ITranslationMemory
         string targetText,
         string sourceLanguage,
         string targetLanguage,
+        TranslationMemoryContext context,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sourceText)
@@ -73,41 +80,70 @@ public sealed class TranslationMemoryService : ITranslationMemory
 
         var source = sourceLanguage.Trim();
         var target = targetLanguage.Trim();
+        var (scope, contextText, pluralIndex, pluralCount) = Normalize(context);
 
-        await using var db = await _dbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var entry = await db.TranslationMemoryEntries
-            .FirstOrDefaultAsync(
-                item => item.SourceText == sourceText
-                        && item.SourceLanguage == source
-                        && item.TargetLanguage == target,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (entry is null)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            db.TranslationMemoryEntries.Add(new TranslationMemoryEntry
+            await using var db = await _dbContextFactory
+                .CreateDbContextAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var entry = await db.TranslationMemoryEntries
+                .FirstOrDefaultAsync(
+                    item => item.SourceText == sourceText
+                            && item.SourceLanguage == source
+                            && item.TargetLanguage == target
+                            && item.ScopeKey == scope
+                            && item.Context == contextText
+                            && item.PluralIndex == pluralIndex
+                            && item.PluralCount == pluralCount,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (entry is null)
             {
-                SourceText = sourceText,
-                TargetText = targetText,
-                SourceLanguage = source,
-                TargetLanguage = target,
-                UsageCount = 1,
-                LastUsedAt = DateTime.UtcNow,
-                CreatedAt = DateTime.UtcNow
-            });
-        }
-        else
-        {
-            entry.TargetText = targetText;
-            entry.UsageCount = Math.Max(1, entry.UsageCount);
-            entry.LastUsedAt = DateTime.UtcNow;
-        }
+                db.TranslationMemoryEntries.Add(new TranslationMemoryEntry
+                {
+                    SourceText = sourceText,
+                    TargetText = targetText,
+                    SourceLanguage = source,
+                    TargetLanguage = target,
+                    ScopeKey = scope,
+                    Context = contextText,
+                    PluralIndex = pluralIndex,
+                    PluralCount = pluralCount,
+                    UsageCount = 1,
+                    LastUsedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                entry.TargetText = targetText;
+                entry.UsageCount = Math.Max(1, entry.UsageCount);
+                entry.LastUsedAt = DateTime.UtcNow;
+            }
 
-        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (DbUpdateException) when (attempt < 2)
+            {
+                // Benzersiz indeks yarışı: yeni context ile mevcut kaydı güncelle.
+            }
+        }
     }
+
+    private static (string ScopeKey, string Context, int PluralIndex, int PluralCount)
+        Normalize(TranslationMemoryContext context) =>
+        (
+            context.ScopeKey?.Trim() ?? string.Empty,
+            context.Context?.Trim() ?? string.Empty,
+            context.PluralIndex ?? -1,
+            context.PluralCount ?? -1
+        );
 
     public async Task<IReadOnlyList<TranslationMemoryEntry>> GetEntriesAsync(
         string? sourceTextFilter = null,

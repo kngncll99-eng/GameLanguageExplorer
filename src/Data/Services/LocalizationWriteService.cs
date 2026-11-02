@@ -43,11 +43,18 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         int discoveredFileId,
         IReadOnlyDictionary<string, string> translations,
         CancellationToken cancellationToken = default,
-        IProgress<LocalizationWriteProgress>? progress = null)
+        IProgress<LocalizationWriteProgress>? progress = null,
+        string? expectedSourceSha256 = null)
     {
         try
         {
-            return await WriteCoreAsync(installedGameId, discoveredFileId, translations, cancellationToken, progress)
+            return await WriteCoreAsync(
+                    installedGameId,
+                    discoveredFileId,
+                    translations,
+                    cancellationToken,
+                    progress,
+                    expectedSourceSha256)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -72,7 +79,8 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         int discoveredFileId,
         IReadOnlyDictionary<string, string> translations,
         CancellationToken cancellationToken,
-        IProgress<LocalizationWriteProgress>? progress)
+        IProgress<LocalizationWriteProgress>? progress,
+        string? expectedSourceSha256)
     {
         if (translations is null || translations.Count == 0)
         {
@@ -121,11 +129,12 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         var root = PathSafety.TryNormalize(install.InstallPath);
         var path = PathSafety.TryNormalize(file.FilePath);
 
-        if (root is null || path is null || !PathSafety.IsUnderRoot(path, root))
+        if (root is null || path is null || !PathSafety.IsUnderRootResolved(path, root))
         {
             return LocalizationWriteResult.Fail(
                 LocalizationWriteStatus.PathRejected,
-                "Dosya yolu kurulum kökünün içinde değil; yazma reddedildi.",
+                "Dosya yolu kurulum kökünün içinde değil veya bağlantılar güvenilir biçimde " +
+                "çözümlenemedi; yazma reddedildi.",
                 file.FilePath);
         }
 
@@ -134,6 +143,16 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
             return LocalizationWriteResult.Fail(
                 LocalizationWriteStatus.NotFound,
                 $"Dosya diskte bulunamadı: '{path}'.",
+                path);
+        }
+
+        var sourceEncoding = LocalizationFileReader.DetectEncoding(path);
+
+        if (sourceEncoding is null)
+        {
+            return LocalizationWriteResult.Fail(
+                LocalizationWriteStatus.UnsupportedEncoding,
+                "Kaynak dosyanın kodlaması güvenilir biçimde belirlenemedi; sessiz dönüşüm yapılmadı.",
                 path);
         }
 
@@ -177,13 +196,16 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         var originalSha256 = await _hashProvider.ComputeSha256Async(path, cancellationToken)
             .ConfigureAwait(false);
 
-        // Kayıtlı hash varsa dosya önizlemeden bu yana değişmiş olabilir.
-        if (!string.IsNullOrWhiteSpace(file.Sha256)
-            && !string.Equals(file.Sha256, originalSha256, StringComparison.OrdinalIgnoreCase))
+        var expected = expectedSourceSha256?.Trim();
+
+        if ((!string.IsNullOrWhiteSpace(file.Sha256)
+                && !string.Equals(file.Sha256, originalSha256, StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrWhiteSpace(expected)
+                && !string.Equals(expected, originalSha256, StringComparison.OrdinalIgnoreCase)))
         {
             return LocalizationWriteResult.Fail(
                 LocalizationWriteStatus.SourceChanged,
-                "Kaynak dosya son taramadan sonra değişmiş; yazma reddedildi.",
+                "Kaynak dosya önizlemeden/son taramadan sonra değişmiş; yazma reddedildi.",
                 path);
         }
 
@@ -225,11 +247,17 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
                     path);
             }
 
-            if (string.IsNullOrWhiteSpace(pair.Value))
+            var validationSource = entry.SourceTextForTranslation ?? entry.SourceText;
+            var validationError = LocalizationWriteValidator.Validate(
+                entry.Key,
+                validationSource,
+                pair.Value);
+
+            if (validationError is not null)
             {
                 return LocalizationWriteResult.Fail(
                     LocalizationWriteStatus.WriteFailed,
-                    $"'{pair.Key}' için boş çeviri yazılamaz.",
+                    validationError,
                     path);
             }
 
@@ -259,7 +287,10 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         }
 
         var newContent = content.Content;
-        var expectedNewSha256 = ComputeSha256Text(newContent);
+        var newBytes = sourceEncoding.Encode(newContent);
+        var expectedNewSha256 = Convert
+            .ToHexString(SHA256.HashData(newBytes))
+            .ToLowerInvariant();
         var backupDirectory = ResolveBackupDirectory();
         Directory.CreateDirectory(backupDirectory);
 
@@ -305,7 +336,7 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
                 LocalizationWriteStage.WritingTemporary, "Yeni içerik geçici dosyaya yazılıyor…", 45));
             cancellationToken.ThrowIfCancellationRequested();
 
-            await WriteAllTextDurableAsync(temporaryPath, newContent, cancellationToken).ConfigureAwait(false);
+            await WriteAllBytesDurableAsync(temporaryPath, newBytes, cancellationToken).ConfigureAwait(false);
 
             var temporarySha256 = await _hashProvider.ComputeSha256Async(temporaryPath, cancellationToken)
                 .ConfigureAwait(false);
@@ -342,56 +373,53 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
                 cancellationToken.ThrowIfCancellationRequested();
 
                 _replacer.Replace(temporaryPath, path);
-
-                var finalSha256 = await _hashProvider.ComputeSha256Async(path, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (!string.Equals(finalSha256, expectedNewSha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    var restored = await TryRestoreAsync(
-                            db, backupRecord, path, originalSha256, originalFileSize, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    return BuildRestoreResult(
-                        restored, path, backupRecord, originalSha256, expectedNewSha256,
-                        "Yazma sonrası SHA-256 doğrulaması başarısız.");
-                }
-
-                file.Sha256 = expectedNewSha256;
-                file.FileSize = Encoding.UTF8.GetByteCount(newContent);
-                file.LastValidationResult = "Güvenli yazma tamamlandı; SHA-256 doğrulandı.";
-                file.LastValidatedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-                progress?.Report(new LocalizationWriteProgress(
-                    LocalizationWriteStage.Completed, "Güvenli yazma tamamlandı.", 100));
-
-                return new LocalizationWriteResult(
-                    true,
-                    LocalizationWriteStatus.Success,
-                    "Çeviriler güvenli biçimde dosyaya yazıldı.",
-                    path,
-                    backupRecord.BackupFilePath,
-                    backupRecord.Id,
-                    originalSha256,
-                    expectedNewSha256);
+                temporaryPath = string.Empty;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Kritik noktadan önce iptal: orijinal dosya değiştirilmedi.
+                SafeDelete(temporaryPath);
+                throw;
             }
             catch (Exception ex)
             {
                 SafeDelete(temporaryPath);
-                _logger.LogError(ex, "Atomik taşıma başarısız; yedekten geri yükleme denenecek: {Path}", path);
+                _logger.LogError(ex, "Dosya değiştirilemedi: {Path}", path);
 
-                progress?.Report(new LocalizationWriteProgress(
-                    LocalizationWriteStage.Restoring, "Hata oluştu; yedekten geri yükleniyor…", 90));
+                using var recoveryCts = CreateRecoveryCancellationSource();
+                var currentSha256 = await TryComputeSha256Async(path, recoveryCts.Token)
+                    .ConfigureAwait(false);
 
-                var restored = await TryRestoreAsync(
-                        db, backupRecord, path, originalSha256, originalFileSize, cancellationToken)
+                if (string.Equals(currentSha256, originalSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    return LocalizationWriteResult.Fail(
+                        LocalizationWriteStatus.WriteFailed,
+                        $"Dosya değiştirilemedi: {ex.Message}",
+                        path);
+                }
+
+                var restore = await TryRestoreAsync(
+                        backupRecord, path, originalSha256, originalFileSize, recoveryCts.Token)
                     .ConfigureAwait(false);
 
                 return BuildRestoreResult(
-                    restored, path, backupRecord, originalSha256, expectedNewSha256,
+                    restore, path, backupRecord, originalSha256, expectedNewSha256,
                     $"Dosya değiştirilemedi: {ex.Message}");
             }
+
+            // Kritik noktadan sonra kullanıcı iptali yok sayılır; doğrulama, DB ve
+            // gerekirse kurtarma ayrı bir süre sınırıyla tamamlanır.
+            return await CompleteReplacedWriteAsync(
+                    db,
+                    file,
+                    backupRecord,
+                    path,
+                    originalSha256,
+                    originalFileSize,
+                    expectedNewSha256,
+                    newBytes.Length,
+                    progress)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -403,18 +431,128 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
             SafeDelete(temporaryPath);
             _logger.LogError(ex, "Güvenli yazma hazırlığı başarısız: {Path}", path);
 
-            var restored = backupRecord is null
-                ? false
-                : await TryRestoreAsync(
-                        db, backupRecord, path, originalSha256, originalFileSize, cancellationToken)
-                    .ConfigureAwait(false);
+            if (backupRecord is null)
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.WriteFailed,
+                    $"Yazma başarısız: {ex.Message}",
+                    path);
+            }
+
+            using var recoveryCts = CreateRecoveryCancellationSource();
+            var currentSha256 = await TryComputeSha256Async(path, recoveryCts.Token)
+                .ConfigureAwait(false);
+
+            if (string.Equals(currentSha256, originalSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return LocalizationWriteResult.Fail(
+                    LocalizationWriteStatus.WriteFailed,
+                    $"Yazma başarısız; orijinal dosya değiştirilmedi: {ex.Message}",
+                    path);
+            }
+
+            var restore = await TryRestoreAsync(
+                    backupRecord, path, originalSha256, originalFileSize, recoveryCts.Token)
+                .ConfigureAwait(false);
 
             return BuildRestoreResult(
-                restored, path, backupRecord, originalSha256, expectedNewSha256,
+                restore, path, backupRecord, originalSha256, expectedNewSha256,
                 $"Yazma başarısız: {ex.Message}");
         }
     }
 
+
+    /// <summary>
+    /// Dosya değiştirildikten sonraki kritik bölüm. Kullanıcı iptal token'ı yerine
+    /// ayrı bir kurtarma süresi kullanır; dosya ile DB aynı sonuca bağlanır.
+    /// </summary>
+    private async Task<LocalizationWriteResult> CompleteReplacedWriteAsync(
+        AppDbContext db,
+        DiscoveredFile file,
+        BackupRecord backupRecord,
+        string path,
+        string originalSha256,
+        long originalFileSize,
+        string expectedNewSha256,
+        long newFileSize,
+        IProgress<LocalizationWriteProgress>? progress)
+    {
+        using var recoveryCts = CreateRecoveryCancellationSource();
+        var recoveryToken = recoveryCts.Token;
+
+        try
+        {
+            var finalSha256 = await _hashProvider.ComputeSha256Async(path, recoveryToken)
+                .ConfigureAwait(false);
+
+            if (!string.Equals(finalSha256, expectedNewSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                var restore = await TryRestoreAsync(
+                        backupRecord, path, originalSha256, originalFileSize, recoveryToken)
+                    .ConfigureAwait(false);
+
+                return BuildRestoreResult(
+                    restore, path, backupRecord, originalSha256, expectedNewSha256,
+                    "Yazma sonrası SHA-256 doğrulaması başarısız.");
+            }
+
+            file.Sha256 = expectedNewSha256;
+            file.FileSize = newFileSize;
+            file.LastValidationResult = "Güvenli yazma tamamlandı; SHA-256 doğrulandı.";
+            file.LastValidatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(recoveryToken).ConfigureAwait(false);
+
+            progress?.Report(new LocalizationWriteProgress(
+                LocalizationWriteStage.Completed, "Güvenli yazma tamamlandı.", 100));
+
+            return new LocalizationWriteResult(
+                true,
+                LocalizationWriteStatus.Success,
+                "Çeviriler güvenli biçimde dosyaya yazıldı.",
+                path,
+                backupRecord.BackupFilePath,
+                backupRecord.Id,
+                originalSha256,
+                expectedNewSha256);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Yazma sonrası doğrulama/DB güncellemesi başarısız: {Path}", path);
+
+            progress?.Report(new LocalizationWriteProgress(
+                LocalizationWriteStage.Restoring, "Hata oluştu; yedekten geri yükleniyor…", 90));
+
+            using var restoreCts = CreateRecoveryCancellationSource();
+            var restore = await TryRestoreAsync(
+                    backupRecord, path, originalSha256, originalFileSize, restoreCts.Token)
+                .ConfigureAwait(false);
+
+            return BuildRestoreResult(
+                restore, path, backupRecord, originalSha256, expectedNewSha256,
+                $"Yazma sonrası doğrulama/DB güncellemesi başarısız: {ex.Message}");
+        }
+    }
+
+    private CancellationTokenSource CreateRecoveryCancellationSource()
+    {
+        var timeout = _options.RecoveryTimeout;
+
+        return timeout <= TimeSpan.Zero || timeout == Timeout.InfiniteTimeSpan
+            ? new CancellationTokenSource()
+            : new CancellationTokenSource(timeout);
+    }
+
+    private async Task<string?> TryComputeSha256Async(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _hashProvider.ComputeSha256Async(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     public async Task<LocalizationWriteResult> RestoreAsync(
         int backupRecordId,
@@ -437,25 +575,85 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
 
             var originalPath = PathSafety.TryNormalize(record.OriginalFilePath);
 
-            if (originalPath is null || !File.Exists(record.BackupFilePath))
+            if (originalPath is null)
+            {
+                return new LocalizationWriteResult(
+                    false,
+                    LocalizationWriteStatus.PathRejected,
+                    "Geri yükleme reddedildi: yedek kaydındaki orijinal dosya yolu geçersiz. "
+                    + $"Yedek bozuk olduğu için değil, hedef yol doğrulanamadığı için işlem yapılmadı. "
+                    + $"Yedek korunuyor: '{record.BackupFilePath}'.",
+                    record.BackupFilePath);
+            }
+
+            if (!File.Exists(record.BackupFilePath))
             {
                 return LocalizationWriteResult.Fail(
                     LocalizationWriteStatus.NotFound,
-                    "Yedek dosyası veya orijinal yol bulunamadı.",
-                    record.OriginalFilePath);
+                    $"Yedek dosyası diskte bulunamadı: '{record.BackupFilePath}'. "
+                    + "Yedek kaydı korunuyor.",
+                    originalPath);
+            }
+
+            // Geri yükleme hedefi de yazma ile aynı güven sınırından geçer: kayıtlı
+            // kurulum kökü bulunmalı ve bağlantılar çözüldüğünde hedef kök altında kalmalı.
+            var installPaths = await db.DiscoveredFiles
+                .AsNoTracking()
+                .Where(file => file.FilePath == record.OriginalFilePath
+                               || file.FilePath == originalPath)
+                .Select(file => file.InstalledGame.InstallPath)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var root = installPaths
+                .Select(PathSafety.TryNormalize)
+                .FirstOrDefault(candidate => candidate is not null
+                    && PathSafety.IsUnderRootResolved(originalPath, candidate));
+
+            if (root is null)
+            {
+                var reason = installPaths.Count == 0
+                    ? "bu dosya için kurulum/dosya kaydı bulunamadı"
+                    : "hedef, kayıtlı kurulum kökü altında güvenilir biçimde çözümlenemedi";
+
+                return new LocalizationWriteResult(
+                    false,
+                    LocalizationWriteStatus.PathRejected,
+                    $"Geri yükleme reddedildi: {reason}. Yedek bozuk olduğu için değil, "
+                    + "hedef kök doğrulanamadığı için işlem yapılmadı. "
+                    + $"Yedek korunuyor: '{record.BackupFilePath}'.",
+                    originalPath,
+                    record.BackupFilePath,
+                    record.Id,
+                    record.OriginalSha256);
             }
 
             var originalFileSize = new FileInfo(record.BackupFilePath).Length;
-            var restored = await TryRestoreAsync(
-                    db, record, originalPath, record.OriginalSha256, originalFileSize, cancellationToken)
+            var restore = await TryRestoreAsync(
+                    record, originalPath, record.OriginalSha256, originalFileSize, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!restored)
+            if (!restore.FileRestored)
             {
                 return LocalizationWriteResult.Fail(
                     LocalizationWriteStatus.RestoreFailed,
-                    "Yedekten geri yükleme başarısız oldu.",
+                    "Yedekten geri yükleme başarısız oldu; yedek korunuyor."
+                    + (restore.ErrorMessage is null ? string.Empty : " " + restore.ErrorMessage),
                     originalPath);
+            }
+
+            if (!restore.DatabaseUpdated)
+            {
+                return new LocalizationWriteResult(
+                    false,
+                    LocalizationWriteStatus.RestoreFailed,
+                    "Dosya yedekten geri yüklendi ancak veritabanı güncellenemedi; " +
+                    "yedek korunuyor. " + (restore.ErrorMessage ?? string.Empty),
+                    originalPath,
+                    record.BackupFilePath,
+                    record.Id,
+                    record.OriginalSha256,
+                    RestoredFromBackup: true);
             }
 
             return new LocalizationWriteResult(
@@ -478,12 +676,16 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         }
     }
 
+    private sealed record RestoreAttemptResult(
+        bool FileRestored,
+        bool DatabaseUpdated,
+        string? ErrorMessage);
+
     /// <summary>
-    /// Yedeği doğrulayıp orijinal konuma geri yükler. Başarısız olursa orijinal dosyaya
-    /// dokunmamaya çalışır; yedek dosyası silinmez.
+    /// Yedeği doğrulayıp orijinal konuma geri yükler. Dosya değiştikten sonra DB
+    /// güncellemesi için yeni bir context kullanılır; başarısız olsa da yedek silinmez.
     /// </summary>
-    private async Task<bool> TryRestoreAsync(
-        AppDbContext db,
+    private async Task<RestoreAttemptResult> TryRestoreAsync(
         BackupRecord record,
         string originalPath,
         string expectedOriginalSha256,
@@ -492,40 +694,68 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
     {
         if (!File.Exists(record.BackupFilePath))
         {
-            return false;
+            return new RestoreAttemptResult(
+                false, false, "Yedek dosyası diskte bulunamadı.");
         }
 
         var restoreTemporaryPath = Path.Combine(
             Path.GetDirectoryName(originalPath)!,
             $".{Path.GetFileName(originalPath)}.{Guid.NewGuid():N}.restore-tmp");
+        var fileRestored = false;
 
         try
         {
-            var backupSha256 = await _hashProvider.ComputeSha256Async(record.BackupFilePath, cancellationToken)
+            var currentSha256 = await TryComputeSha256Async(originalPath, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!string.Equals(backupSha256, expectedOriginalSha256, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(currentSha256, expectedOriginalSha256, StringComparison.OrdinalIgnoreCase))
             {
-                return false;
+                fileRestored = true;
+            }
+            else
+            {
+                var backupSha256 = await _hashProvider
+                    .ComputeSha256Async(record.BackupFilePath, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!string.Equals(backupSha256, expectedOriginalSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new RestoreAttemptResult(
+                        false, false, "Yedek dosyasının SHA-256 değeri orijinalle eşleşmiyor.");
+                }
+
+                File.Copy(record.BackupFilePath, restoreTemporaryPath, overwrite: true);
+                _replacer.Replace(restoreTemporaryPath, originalPath);
+                restoreTemporaryPath = string.Empty;
+                fileRestored = true;
+
+                var restoredSha256 = await _hashProvider
+                    .ComputeSha256Async(originalPath, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!string.Equals(restoredSha256, expectedOriginalSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new RestoreAttemptResult(
+                        false, false, "Geri yüklenen dosyanın SHA-256 doğrulaması başarısız.");
+                }
             }
 
-            File.Copy(record.BackupFilePath, restoreTemporaryPath, overwrite: true);
-            _replacer.Replace(restoreTemporaryPath, originalPath);
-            restoreTemporaryPath = string.Empty;
-
-            var restoredSha256 = await _hashProvider.ComputeSha256Async(originalPath, cancellationToken)
+            await using var recoveryDb = await _dbContextFactory
+                .CreateDbContextAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!string.Equals(restoredSha256, expectedOriginalSha256, StringComparison.OrdinalIgnoreCase))
+            var backupRecord = await recoveryDb.BackupRecords
+                .FirstOrDefaultAsync(item => item.Id == record.Id, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (backupRecord is not null)
             {
-                return false;
+                backupRecord.IsRestored = true;
+                backupRecord.RestoredAt = DateTime.UtcNow;
             }
 
-            record.IsRestored = true;
-            record.RestoredAt = DateTime.UtcNow;
-
-            var file = await db.DiscoveredFiles
-                .FirstOrDefaultAsync(f => f.FilePath == originalPath, cancellationToken)
+            var file = await recoveryDb.DiscoveredFiles
+                .FirstOrDefaultAsync(item => item.FilePath == originalPath, cancellationToken)
                 .ConfigureAwait(false);
 
             if (file is not null)
@@ -536,13 +766,13 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
                 file.LastValidatedAt = DateTime.UtcNow;
             }
 
-            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return true;
+            await recoveryDb.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return new RestoreAttemptResult(true, true, null);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Yedekten geri yükleme denemesi başarısız: {Path}", originalPath);
-            return false;
+            return new RestoreAttemptResult(fileRestored, false, ex.Message);
         }
         finally
         {
@@ -575,16 +805,27 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
     }
 
     private static LocalizationWriteResult BuildRestoreResult(
-        bool restored,
+        RestoreAttemptResult restore,
         string path,
         BackupRecord? backupRecord,
         string originalSha256,
         string expectedNewSha256,
         string reason)
     {
-        var message = restored
-            ? $"{reason} Orijinal dosya yedekten geri yüklendi."
-            : $"{reason} Yedekten geri yükleme de başarısız oldu; yedek korunuyor.";
+        var message = restore switch
+        {
+            { FileRestored: true, DatabaseUpdated: true } =>
+                $"{reason} Orijinal dosya yedekten geri yüklendi.",
+            { FileRestored: true, DatabaseUpdated: false } =>
+                $"{reason} Dosya yedeğe döndürüldü ancak veritabanı güncellenemedi; "
+                + "yedek korunuyor."
+                + (restore.ErrorMessage is null ? string.Empty : " " + restore.ErrorMessage),
+            _ =>
+                $"{reason} Yedekten geri yükleme de başarısız oldu; yedek korunuyor."
+                + (restore.ErrorMessage is null ? string.Empty : " " + restore.ErrorMessage)
+        };
+
+        var restored = restore.FileRestored && restore.DatabaseUpdated;
 
         return new LocalizationWriteResult(
             false,
@@ -595,7 +836,7 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
             backupRecord?.Id,
             originalSha256,
             expectedNewSha256,
-            restored);
+            restore.FileRestored);
     }
 
     private string ResolveBackupDirectory()
@@ -606,14 +847,12 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
                 "backups")
             : Path.GetFullPath(_options.BackupDirectory);
 
-    /// <summary>Geçici dosyayı yazar ve disk tamponunu boşaltır.</summary>
-    private static async Task WriteAllTextDurableAsync(
+    /// <summary>Geçici dosyayı, kaynak kodlama/BOM ile yazar ve disk tamponunu boşaltır.</summary>
+    private static async Task WriteAllBytesDurableAsync(
         string path,
-        string content,
+        byte[] bytes,
         CancellationToken cancellationToken)
     {
-        var bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(content);
-
         await using var stream = new FileStream(
             path,
             FileMode.CreateNew,
@@ -626,9 +865,6 @@ public sealed class LocalizationWriteService : ILocalizationWriteService
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         stream.Flush(flushToDisk: true);
     }
-
-    private static string ComputeSha256Text(string text)
-        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     private static void SafeDelete(string? path)
     {

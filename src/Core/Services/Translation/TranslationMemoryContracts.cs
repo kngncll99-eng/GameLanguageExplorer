@@ -3,24 +3,68 @@ using GameLanguageExplorer.Core.Entities;
 namespace GameLanguageExplorer.Core.Services.Translation;
 
 /// <summary>
+/// Çeviri belleği kimliğinin bağlam bileşenleri. Aynı kaynak metin farklı oyun,
+/// bağlam veya çoğul biçimde farklı çeviriye sahip olabilir.
+/// </summary>
+public sealed record TranslationMemoryContext(
+    string ScopeKey,
+    string Context = "",
+    int? PluralIndex = null,
+    int? PluralCount = null)
+{
+    /// <summary>Eski/bağlamsız çağrılar için boş kimlik; yeni kayıtlarla eşleşmez.</summary>
+    public static TranslationMemoryContext Empty { get; } = new(string.Empty);
+}
+
+/// <summary>
 /// Çeviri belleği sözleşmesi. Motor yalnızca bu arayüze bağlıdır; gerçek tablo erişimi
 /// veri katmanındaki uygulamada yapılır.
 /// </summary>
 public interface ITranslationMemory
 {
-    /// <summary>Kaynak metin ve dil çifti için tam eşleşme arar; bulunursa hedef metni döndürür.</summary>
+    /// <summary>Bağlamsız eski API; kapsam/bağlam bilinmediği için yeni kayıtlarla eşleşmez.</summary>
     Task<string?> FindExactAsync(
         string sourceText,
         string sourceLanguage,
         string targetLanguage,
+        CancellationToken cancellationToken = default)
+        => FindExactAsync(
+            sourceText,
+            sourceLanguage,
+            targetLanguage,
+            TranslationMemoryContext.Empty,
+            cancellationToken);
+
+    /// <summary>Kaynak metin, dil çifti ve bağlam kimliği için tam eşleşme arar.</summary>
+    Task<string?> FindExactAsync(
+        string sourceText,
+        string sourceLanguage,
+        string targetLanguage,
+        TranslationMemoryContext context,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Başarılı bir çeviriyi belleğe ekler veya aynı anahtarın hedef metnini günceller.</summary>
+    /// <summary>Bağlamsız eski API; yeni kayıtlar boş kapsamla yazılmaz.</summary>
     Task SaveAsync(
         string sourceText,
         string targetText,
         string sourceLanguage,
         string targetLanguage,
+        CancellationToken cancellationToken = default)
+        => SaveAsync(
+            sourceText,
+            targetText,
+            sourceLanguage,
+            targetLanguage,
+            TranslationMemoryContext.Empty,
+            cancellationToken);
+
+    /// <summary>Başarılı bir çeviriyi bağlam kimliğiyle belleğe ekler/günceller.</summary>
+    Task SaveAsync(
+        string sourceText,
+        string targetText,
+        string sourceLanguage,
+        string targetLanguage,
+        TranslationMemoryContext context,
         CancellationToken cancellationToken = default);
 
     /// <summary>

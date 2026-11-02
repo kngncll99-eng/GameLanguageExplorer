@@ -69,6 +69,12 @@ public sealed record LocalizationTextEntry
     public required string FormatKey { get; init; }
 
     /// <summary>
+    /// Yer tutucu doğrulamasında kaynak kabul edilecek metin. CSV'de çeviri hücresinin
+    /// kendisi değil, aynı satırdaki kaynak sütunudur. <c>null</c> ise <see cref="SourceText"/> kullanılır.
+    /// </summary>
+    public string? SourceTextForTranslation { get; init; }
+
+    /// <summary>
     /// Dosyada zaten var olan çeviri (PO <c>msgstr</c>). Yalnızca okuma amaçlı gösterilir;
     /// hiçbir yere yazılmaz. Çeviri yoksa <c>null</c> veya boş dize.
     /// </summary>

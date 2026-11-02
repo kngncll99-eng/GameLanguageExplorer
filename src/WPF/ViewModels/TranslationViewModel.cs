@@ -126,9 +126,21 @@ public partial class TranslationViewModel : ViewModelBase
     private readonly ILocalizationExportService? _exportService;
     private readonly ISaveFileDialogService? _saveFileDialogService;
 
+    private CancellationTokenSource? _previewCts;
     private CancellationTokenSource? _operationCts;
     private CancellationTokenSource? _writeCts;
     private LocalizationPreviewResult? _preview;
+    private int _previewRequestId;
+    private int _runRequestId;
+    private int _writeRequestId;
+    private SelectionSnapshot? _resultsSelection;
+
+    private sealed record SelectionSnapshot(
+        int InstalledGameId,
+        int DiscoveredFileId,
+        string FilePath,
+        string FileName,
+        string? SourceSha256);
     private List<TranslationResultRow> _allResults = new();
 
     [ObservableProperty]
@@ -332,12 +344,14 @@ public partial class TranslationViewModel : ViewModelBase
     partial void OnSelectedGameChanged(InstalledGame? value)
     {
         IsGameListOpen = false;
+        InvalidateSelectionRequests();
         ResetPreview();
         LoadFiles();
     }
 
     partial void OnSelectedFileChanged(DiscoveredFileRow? value)
     {
+        InvalidateSelectionRequests();
         ResetPreview();
         PreviewCommand.NotifyCanExecuteChanged();
         StartCommand.NotifyCanExecuteChanged();
@@ -349,6 +363,35 @@ public partial class TranslationViewModel : ViewModelBase
         ExportStatusMessage = null;
         ExportErrorMessage = null;
     }
+
+    /// <summary>
+    /// Seçim değiştiğinde eski önizleme/çeviri isteğini iptal eder ve istek kimliğini artırır.
+    /// İptal gecikse bile eski sonuç geçerli seçime uygulanmaz.
+    /// </summary>
+    private void InvalidateSelectionRequests()
+    {
+        _previewRequestId++;
+        _previewCts?.Cancel();
+        _previewCts = null;
+
+        _runRequestId++;
+        _operationCts?.Cancel();
+
+        _resultsSelection = null;
+    }
+
+    private bool IsCurrentSelection(int installedGameId, int discoveredFileId) =>
+        SelectedGame?.Id == installedGameId && SelectedFile?.Id == discoveredFileId;
+
+    private SelectionSnapshot? CaptureSelection(string? sourceSha256 = null) =>
+        SelectedGame is { } game && SelectedFile is { } file
+            ? new SelectionSnapshot(
+                game.Id,
+                file.Id,
+                file.FilePath,
+                file.FileName,
+                sourceSha256)
+            : null;
 
     partial void OnIsRunningChanged(bool value)
     {
@@ -450,6 +493,7 @@ public partial class TranslationViewModel : ViewModelBase
     private void ResetPreview()
     {
         _preview = null;
+        _resultsSelection = null;
         HasPreview = false;
         PreviewTitle = null;
         PreviewPath = null;
@@ -583,8 +627,9 @@ public partial class TranslationViewModel : ViewModelBase
     private bool CanWriteToFile() =>
         _writeService is not null
         && _confirmationService is not null
-        && SelectedGame is not null
         && SelectedFile?.SupportsWrite == true
+        && _resultsSelection is { } resultSelection
+        && IsCurrentSelection(resultSelection.InstalledGameId, resultSelection.DiscoveredFileId)
         && HasResults
         && !IsBusy
         && !IsRunning
@@ -597,7 +642,9 @@ public partial class TranslationViewModel : ViewModelBase
 
     private async Task WriteToFileAsync()
     {
-        if (!CanWriteToFile() || SelectedGame is null || SelectedFile is null || _writeService is null)
+        if (!CanWriteToFile()
+            || _resultsSelection is not { } selection
+            || _writeService is null)
         {
             return;
         }
@@ -612,18 +659,21 @@ public partial class TranslationViewModel : ViewModelBase
             return;
         }
 
-        _writeCts = new CancellationTokenSource();
+        var requestId = ++_writeRequestId;
+        var cts = new CancellationTokenSource();
+        _writeCts = cts;
 
         try
         {
-            var progress = new Progress<LocalizationWriteProgress>(ApplyWriteProgress);
+            var progress = new Progress<LocalizationWriteProgress>(
+                value => ApplyWriteProgress(requestId, selection, value));
             var outcome = await LocalizationWriteFlow.ExecuteAsync(
                     _confirmationService!,
                     _writeService,
-                    SelectedGame.Id,
-                    SelectedFile.Id,
+                    selection.InstalledGameId,
+                    selection.DiscoveredFileId,
                     translations,
-                    SelectedFile.FileName,
+                    selection.FileName,
                     "Dosyaya Yaz",
                     "çeviri yazılacak.",
                     "Yazma işlemi kullanıcı tarafından iptal edildi.",
@@ -638,8 +688,16 @@ public partial class TranslationViewModel : ViewModelBase
                         WriteStatusMessage = "Güvenli yazma hazırlanıyor…";
                     },
                     progress,
-                    _writeCts.Token)
+                    selection.SourceSha256,
+                    cts.Token)
                 .ConfigureAwait(true);
+
+            if (requestId != _writeRequestId
+                || !ReferenceEquals(_writeCts, cts)
+                || !IsCurrentSelection(selection.InstalledGameId, selection.DiscoveredFileId))
+            {
+                return;
+            }
 
             WriteProgressPercent = outcome.ProgressPercent;
             WriteStatusMessage = outcome.StatusMessage;
@@ -647,10 +705,14 @@ public partial class TranslationViewModel : ViewModelBase
         }
         finally
         {
-            _writeCts?.Dispose();
-            _writeCts = null;
-            IsWriting = false;
-            IsBusy = false;
+            cts.Dispose();
+
+            if (ReferenceEquals(_writeCts, cts))
+            {
+                _writeCts = null;
+                IsWriting = false;
+                IsBusy = false;
+            }
         }
     }
 
@@ -665,18 +727,35 @@ public partial class TranslationViewModel : ViewModelBase
         _writeCts?.Cancel();
     }
 
-    private void ApplyWriteProgress(LocalizationWriteProgress progress)
+    private void ApplyWriteProgress(
+        int requestId,
+        SelectionSnapshot selection,
+        LocalizationWriteProgress progress)
     {
+        if (!IsWriting
+            || requestId != _writeRequestId
+            || !IsCurrentSelection(selection.InstalledGameId, selection.DiscoveredFileId))
+        {
+            return;
+        }
+
         WriteProgressPercent = Math.Clamp(progress.Percent, 0, 100);
         WriteStatusMessage = progress.Message;
     }
 
     private async Task StartAsync()
     {
-        if (SelectedGame is null || SelectedFile is null)
+        var selection = CaptureSelection();
+
+        if (selection is null)
         {
             return;
         }
+
+        _operationCts?.Cancel();
+        var requestId = ++_runRequestId;
+        var cts = new CancellationTokenSource();
+        _operationCts = cts;
 
         IsRunning = true;
         IsBusy = true;
@@ -684,20 +763,22 @@ public partial class TranslationViewModel : ViewModelBase
         WarningMessage = null;
         MetricsText = null;
         HasResults = false;
+        _resultsSelection = null;
         ProgressPercent = 0;
         CompletedCount = 0;
         TotalCount = 0;
-        _operationCts = new CancellationTokenSource();
 
         try
         {
             StatusMessage = "Dosya önizlemesi hazırlanıyor…";
-            if (!await EnsurePreviewAsync().ConfigureAwait(true))
+            var preview = await EnsurePreviewAsync(selection, cts.Token).ConfigureAwait(true);
+
+            if (!IsCurrentRun(requestId, selection, cts) || preview is null)
             {
                 return;
             }
 
-            if (_preview!.Truncated)
+            if (preview.Truncated)
             {
                 ErrorMessage =
                     "Önizleme kayıt sınırı nedeniyle kesildi; eksik dosya çevrilmez. " +
@@ -707,10 +788,16 @@ public partial class TranslationViewModel : ViewModelBase
             }
 
             var profile = BuildProfile(TimeSpan.FromSeconds(Clamp(RequestTimeoutSeconds, 5, 600)));
-            var sourceSha = FileFingerprint.TryNormalizeSha256(SelectedFile.Sha256, out var normalized)
-                ? normalized
-                : await FileFingerprint.ComputeSha256Async(SelectedFile.FilePath, _operationCts.Token)
+            var sourceSha = preview.SourceSha256;
+
+            if (string.IsNullOrWhiteSpace(sourceSha))
+            {
+                sourceSha = await FileFingerprint
+                    .ComputeSha256Async(selection.FilePath, cts.Token)
                     .ConfigureAwait(true);
+            }
+
+            selection = selection with { SourceSha256 = sourceSha };
 
             var options = new TranslationEngineOptions
             {
@@ -720,13 +807,13 @@ public partial class TranslationViewModel : ViewModelBase
 
             var request = new TranslationEngineRequest
             {
-                InstalledGameId = SelectedGame.Id,
-                DiscoveredFileId = SelectedFile.Id,
-                FilePath = SelectedFile.FilePath,
-                FileFormat = _preview.FormatKey,
+                InstalledGameId = selection.InstalledGameId,
+                DiscoveredFileId = selection.DiscoveredFileId,
+                FilePath = selection.FilePath,
+                FileFormat = preview.FormatKey,
                 SourceFileSha256 = sourceSha,
-                Entries = _preview.Entries,
-                SourceTruncated = _preview.Truncated,
+                Entries = preview.Entries,
+                SourceTruncated = preview.Truncated,
                 SourceLanguage = SourceLanguage,
                 TargetLanguage = TargetLanguage,
                 Provider = profile,
@@ -740,47 +827,88 @@ public partial class TranslationViewModel : ViewModelBase
                 profile,
                 new EnvironmentTranslationCredentialProvider());
 
-            var progress = new Progress<TranslationRunProgress>(ApplyProgress);
+            var progress = new Progress<TranslationRunProgress>(
+                value => ApplyProgress(requestId, selection, value));
             StatusMessage = "Çeviri başlatıldı; ilk parti hazırlanıyor…";
 
             var result = await _translationEngine
-                .RunAsync(request, provider, progress, _operationCts.Token)
+                .RunAsync(request, provider, progress, cts.Token)
                 .ConfigureAwait(true);
 
-            ApplyRunResult(result);
+            if (!IsCurrentRun(requestId, selection, cts))
+            {
+                return;
+            }
+
+            ApplyRunResult(result, selection);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            if (IsCurrentRun(requestId, selection, cts))
+            {
+                StatusMessage = "Çeviri iptal edildi; tamamlanan partiler günlükte korundu.";
+            }
         }
         catch (Exception exception)
         {
+            if (!IsCurrentRun(requestId, selection, cts))
+            {
+                return;
+            }
+
             ErrorMessage = "Çeviri başlatılamadı: " + exception.Message;
             StatusMessage = null;
         }
         finally
         {
-            _operationCts?.Dispose();
-            _operationCts = null;
-            IsRunning = false;
-            IsBusy = false;
+            cts.Dispose();
+
+            if (ReferenceEquals(_operationCts, cts))
+            {
+                _operationCts = null;
+                IsRunning = false;
+                IsBusy = false;
+            }
         }
     }
 
-    private async Task<bool> EnsurePreviewAsync()
+    private bool IsCurrentRun(
+        int requestId,
+        SelectionSnapshot selection,
+        CancellationTokenSource cts) =>
+        requestId == _runRequestId
+        && ReferenceEquals(_operationCts, cts)
+        && !cts.IsCancellationRequested
+        && IsCurrentSelection(selection.InstalledGameId, selection.DiscoveredFileId);
+
+    private async Task<LocalizationPreviewResult?> EnsurePreviewAsync(
+        SelectionSnapshot selection,
+        CancellationToken cancellationToken)
     {
         if (_preview is not null
             && _preview.Success
-            && _preview.DiscoveredFileId == SelectedFile?.Id)
+            && _preview.InstalledGameId == selection.InstalledGameId
+            && _preview.DiscoveredFileId == selection.DiscoveredFileId)
         {
-            return true;
+            return _preview;
         }
 
         var result = await _previewService
-            .PreviewAsync(SelectedGame!.Id, SelectedFile!.Id, _operationCts?.Token ?? CancellationToken.None)
+            .PreviewAsync(selection.InstalledGameId, selection.DiscoveredFileId, cancellationToken)
             .ConfigureAwait(true);
+
+        if (!IsCurrentSelection(selection.InstalledGameId, selection.DiscoveredFileId)
+            || result.InstalledGameId != selection.InstalledGameId
+            || result.DiscoveredFileId != selection.DiscoveredFileId)
+        {
+            return null;
+        }
 
         if (!result.Success)
         {
             ErrorMessage = result.ErrorMessage ?? "Dosya önizlenemedi.";
             StatusMessage = null;
-            return false;
+            return null;
         }
 
         _preview = result;
@@ -790,7 +918,7 @@ public partial class TranslationViewModel : ViewModelBase
         PreviewTranslatableCount = result.TranslatableCount;
         PreviewAmbiguousCount = result.AmbiguousCount;
         PreviewSkippedCount = result.SkippedCount;
-        return true;
+        return result;
     }
 
     private static int Clamp(int value, int minimum, int maximum) =>
@@ -885,10 +1013,15 @@ public partial class TranslationViewModel : ViewModelBase
 
     private async Task PreviewAsync()
     {
-        if (SelectedGame is null || SelectedFile is null)
+        if (SelectedGame is not { } game || SelectedFile is not { } file)
         {
             return;
         }
+
+        _previewCts?.Cancel();
+        var requestId = ++_previewRequestId;
+        var cts = new CancellationTokenSource();
+        _previewCts = cts;
 
         IsBusy = true;
         HasPreview = false;
@@ -899,8 +1032,18 @@ public partial class TranslationViewModel : ViewModelBase
         try
         {
             var result = await _previewService
-                .PreviewAsync(SelectedGame.Id, SelectedFile.Id, CancellationToken.None)
+                .PreviewAsync(game.Id, file.Id, cts.Token)
                 .ConfigureAwait(true);
+
+            if (requestId != _previewRequestId
+                || !ReferenceEquals(_previewCts, cts)
+                || cts.IsCancellationRequested
+                || !IsCurrentSelection(game.Id, file.Id)
+                || result.InstalledGameId != game.Id
+                || result.DiscoveredFileId != file.Id)
+            {
+                return;
+            }
 
             if (!result.Success)
             {
@@ -924,21 +1067,47 @@ public partial class TranslationViewModel : ViewModelBase
                 $"{result.SkippedCount} atlandı. Ayrıştırma: {result.Duration.TotalMilliseconds:0} ms."
                 + (result.Truncated ? " DİKKAT: kayıt sınırı nedeniyle kesildi." : string.Empty);
         }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Seçim değişti; eski önizleme sonucu uygulanmaz.
+        }
         catch (Exception exception)
         {
+            if (requestId != _previewRequestId || !IsCurrentSelection(game.Id, file.Id))
+            {
+                return;
+            }
+
             ErrorMessage = "Önizleme başarısız: " + exception.Message;
             StatusMessage = null;
         }
         finally
         {
-            IsBusy = false;
-            PreviewCommand.NotifyCanExecuteChanged();
-            StartCommand.NotifyCanExecuteChanged();
+            cts.Dispose();
+
+            if (ReferenceEquals(_previewCts, cts))
+            {
+                _previewCts = null;
+                IsBusy = false;
+                PreviewCommand.NotifyCanExecuteChanged();
+                StartCommand.NotifyCanExecuteChanged();
+            }
         }
     }
 
-    private void ApplyProgress(TranslationRunProgress progress)
+    private void ApplyProgress(
+        int requestId,
+        SelectionSnapshot selection,
+        TranslationRunProgress progress)
     {
+        // Progress<T> callback'i iptal/seçim değişikliğinden sonra gelebilir.
+        if (!IsRunning
+            || requestId != _runRequestId
+            || !IsCurrentSelection(selection.InstalledGameId, selection.DiscoveredFileId))
+        {
+            return;
+        }
+
         CompletedCount = progress.Completed;
         TotalCount = progress.Total;
         BatchIndex = progress.BatchIndex;
@@ -954,11 +1123,17 @@ public partial class TranslationViewModel : ViewModelBase
         }
     }
 
-    private void ApplyRunResult(TranslationRunResult result)
+    private void ApplyRunResult(TranslationRunResult result, SelectionSnapshot selection)
     {
+        if (!IsRunning || !IsCurrentSelection(selection.InstalledGameId, selection.DiscoveredFileId))
+        {
+            return;
+        }
+
         _allResults = result.Units
             .Select(unit => new TranslationResultRow(unit))
             .ToList();
+        _resultsSelection = selection;
         ApplyResultFilter();
 
         HasResults = _allResults.Count > 0;

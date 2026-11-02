@@ -54,6 +54,93 @@ public static class PathSafety
                || candidate.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Yolun kendisi ve tüm ara klasörlerindeki junction/symbolic link hedeflerini çözer.
+    /// Çözülemeyen bağlantı veya okunamayan yol için <c>null</c> döner.
+    /// </summary>
+    public static string? ResolveFinalPath(string path)
+    {
+        var full = TryNormalize(path);
+
+        if (full is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var root = Path.GetPathRoot(full) ?? string.Empty;
+            var current = root;
+
+            foreach (var segment in full[root.Length..]
+                         .Split(
+                             new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                             StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, segment);
+
+                if (Directory.Exists(current))
+                {
+                    var directory = new DirectoryInfo(current);
+
+                    if (directory.LinkTarget is not null)
+                    {
+                        var target = directory.ResolveLinkTarget(returnFinalTarget: true);
+
+                        if (target is null)
+                        {
+                            return null;
+                        }
+
+                        current = Path.GetFullPath(target.FullName);
+                    }
+                }
+                else if (File.Exists(current))
+                {
+                    var file = new FileInfo(current);
+
+                    if (file.LinkTarget is not null)
+                    {
+                        var target = file.ResolveLinkTarget(returnFinalTarget: true);
+
+                        if (target is null)
+                        {
+                            return null;
+                        }
+
+                        current = Path.GetFullPath(target.FullName);
+                    }
+                }
+            }
+
+            return TryNormalize(current);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Metinsel kök kontrolünden sonra bağlantıları da çözerek hedefin gerçekten
+    /// kökün içinde kaldığını doğrular. Ara klasör junction/symlink'leri kapsanır.
+    /// </summary>
+    public static bool IsUnderRootResolved(string candidatePath, string rootPath)
+    {
+        if (!IsUnderRoot(candidatePath, rootPath))
+        {
+            return false;
+        }
+
+        var resolvedRoot = ResolveFinalPath(rootPath);
+        var resolvedCandidate = ResolveFinalPath(candidatePath);
+
+        return resolvedRoot is not null
+               && resolvedCandidate is not null
+               && IsUnderRoot(resolvedCandidate, resolvedRoot);
+    }
+
     /// <summary>Kök klasöre göre göreli klasör yolunu döndürür (dosya adı dahil değil).</summary>
     public static string? GetRelativeDirectory(string filePath, string rootPath)
     {

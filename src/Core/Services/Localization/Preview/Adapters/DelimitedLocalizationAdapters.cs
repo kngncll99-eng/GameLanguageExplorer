@@ -43,6 +43,15 @@ public abstract class DelimitedLocalizationAdapterBase : ILocalizationFormatAdap
     /// </summary>
     protected virtual bool TreatEmptyTranslationAsTranslatable => false;
 
+    /// <summary>
+    /// Çeviri hücresi için yer tutucu karşılaştırmasında kullanılacak kaynak metni döndürür.
+    /// CSV, çeviri hücresinin kendisi yerine aynı satırdaki kaynak sütununu kullanır.
+    /// </summary>
+    protected virtual string? GetTranslationComparisonSource(
+        IReadOnlyList<string> fields,
+        IReadOnlyList<string> columnNames,
+        string? columnName) => null;
+
     public Task<LocalizationTextReadResult> ReadAsync(
         string filePath,
         LocalizationFormatReadOptions? options = null,
@@ -154,7 +163,9 @@ public abstract class DelimitedLocalizationAdapterBase : ILocalizationFormatAdap
                             : PlaceholderScanner.Scan(value),
                         Evidence = $"{RecordWord} hücresi: satır {row.LineNumber}, sütun {columnIndex + 1}"
                                    + $" (ayraç: {DelimitedTextParser.DisplayDelimiter(parse.Delimiter)})",
-                        FormatKey = FormatName
+                        FormatKey = FormatName,
+                        SourceTextForTranslation = GetTranslationComparisonSource(
+                            row.Fields, columnNames, columnName)
                     });
                 }
 
@@ -364,6 +375,65 @@ public sealed class CsvLocalizationAdapter : DelimitedLocalizationAdapterBase, I
     public override bool SupportsWrite => true;
 
     protected override bool TreatEmptyTranslationAsTranslatable => true;
+
+    protected override string? GetTranslationComparisonSource(
+        IReadOnlyList<string> fields,
+        IReadOnlyList<string> columnNames,
+        string? columnName)
+    {
+        if (string.IsNullOrWhiteSpace(columnName) || !IsTranslationColumnName(columnName))
+        {
+            return null;
+        }
+
+        var sourceIndex = FindSourceColumnIndex(columnNames);
+
+        return sourceIndex >= 0 && sourceIndex < fields.Count
+            ? fields[sourceIndex]
+            : null;
+    }
+
+    private static int FindSourceColumnIndex(IReadOnlyList<string> columnNames)
+    {
+        var normalized = columnNames
+            .Select(NormalizeHeaderName)
+            .ToArray();
+
+        string[] preferred = { "source", "sourcetext", "original", "originaltext", "text", "value" };
+
+        foreach (var name in preferred)
+        {
+            var index = Array.IndexOf(normalized, name);
+
+            if (index >= 0)
+            {
+                return index;
+            }
+        }
+
+        for (var index = 0; index < normalized.Length; index++)
+        {
+            if (string.IsNullOrEmpty(normalized[index])
+                || IsTranslationColumnName(columnNames[index])
+                || normalized[index] is "id" or "key" or "index" or "line" or "linenumber"
+                    or "language" or "locale" or "context" or "comment" or "file" or "path"
+                    or "flag" or "flags" or "fuzzy")
+            {
+                continue;
+            }
+
+            return index;
+        }
+
+        return -1;
+    }
+
+    private static string NormalizeHeaderName(string columnName)
+        => new(columnName
+            .Trim()
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray());
 
     /// <summary>Başlık adı çeviri sütunu olarak kullanılabilir mi?</summary>
     public static bool IsTranslationColumnName(string? columnName)

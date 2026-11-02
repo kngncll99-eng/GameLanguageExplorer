@@ -602,10 +602,25 @@ namespace GameLanguageExplorer.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Context")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PluralCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PluralIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ScopeKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SourceLanguage")
@@ -631,7 +646,8 @@ namespace GameLanguageExplorer.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SourceText", "SourceLanguage", "TargetLanguage");
+                    b.HasIndex("SourceText", "SourceLanguage", "TargetLanguage", "ScopeKey", "Context", "PluralIndex", "PluralCount")
+                        .IsUnique();
 
                     b.ToTable("TranslationMemoryEntries");
                 });
