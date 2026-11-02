@@ -13,7 +13,7 @@ Temel hedefler:
 - Steam başta olmak üzere oyunları aramak, kataloğa eklemek ve yerel SQLite veritabanında saklamak.
 - Kurulu oyunları mağaza manifestlerinden veya kullanıcının seçtiği klasörlerden salt okunur biçimde tespit etmek.
 - Oyun klasörlerindeki dil dosyası adaylarını keşfetmek; format, güven düzeyi ve kanıtlarıyla birlikte raporlamak.
-- JSON, XML, CSV, TSV, PO, POT, INI ve LocresCSV dosyalarını ayrıştırıp metin kayıtlarını önizlemek; JSON/CSV/PO/INI için güvenli yazma.
+- JSON, XML, CSV, TSV, PO, POT, INI, YAML ve LocresCSV dosyalarını ayrıştırıp metin kayıtlarını önizlemek; JSON/CSV/PO/INI için güvenli yazma.
 - Yerel veya OpenAI uyumlu bir LLM ile çeviri adayları üretmek; yer tutucuları, kaliteyi ve çalışma günlüğünü yönetmek.
 - Uzun vadede güvenli düzenleme, yedekleme, geri yükleme ve motor özelinde format eklentileri sunmak.
 
@@ -189,7 +189,7 @@ Salt okunur önizleme için kayıtlı adaptörler:
 ### 11. Test ve Doğrulama
 
 - xUnit tabanlı birim ve entegrasyon testleri.
-- Son doğrulanan durum: **655 test başarılı**, 0 başarısız, 0 atlanan.
+- Son doğrulanan durum: **689 test başarılı**, 0 başarısız, 1 atlandı (gerçek LM Studio/oyun dosyası entegrasyon testi).
 - `scripts/validate-project.ps1` salt okunur doğrulama yapar:
   - `dotnet build`
   - `dotnet test`
@@ -313,7 +313,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 | Yan yana editör | ✅ Çalışıyor | JSON/CSV/PO/INI düzenleme; diğer formatlar salt okunur |
 | Çeviri belleği yönetimi | ✅ Çalışıyor | Listeleme, kaynak metin filtresi, onaylı tek/toplu silme |
 | Yedek yönetimi | ✅ Çalışıyor | `BackupRecord` listeleme, onaylı geri yükleme ve güvenli silme |
-| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 655/655 test |
+| Doğrulama script’i ve testler | ✅ Çalışıyor | Son durum: 689/690 test; 1 gerçek entegrasyon testi skipped |
 
 > WPF ekranlarının tamamı otomatik UI testleriyle kapsanmaz; build/test sonuçları iş mantığını doğrular, görsel akış manuel kontrol gerektirir.
 
@@ -333,6 +333,7 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 - Unreal `.locres`, `.uasset` ve şifreli `.pak` içerikleri okunmuyor.
 - NTE için gerçek `.locres`/PAK doğrulaması; şifreleme ve gerekli ön koşullar nedeniyle henüz yapılamıyor.
 - UTF-8/UTF-16 dışı kodlamalar (ör. Windows-1254) reddedilir.
+- Kurulum/dosya kaydı artık bulunmayan eski yedekler, güvenilir kök ilişkisi doğrulanamadığı için geri yüklenmez; yedek dosyası korunur.
 
 ### Mağaza ve platform kapsamı
 
@@ -342,8 +343,11 @@ Aşağıdaki modüller mevcut kodda uygulanmıştır ve build/test ile doğrulan
 
 ### Çeviri ve veri
 
-- AI çeviri ekranı sonuçları yalnızca kullanıcı onayıyla JSON dosyasına yazılabilir; diğer formatlarda yazma yoktur.
-- `GlossaryTerm` tablosu çeviri akışına tam bağlı değil; çeviri belleği tam eşleşmeli olarak çalışıyor, dosya tabanlı günlük ve yerleşik sözlük de kullanılmaya devam ediyor.
+- AI çeviri ve editör sonuçları yalnızca kullanıcı onayıyla JSON/CSV/PO/INI dosyalarına yazılabilir; diğer formatlarda yazma yoktur.
+- Yazma sırasında kaynak kodlama/BOM korunur; UTF-8/UTF-16 dışı veya güvenilir belirlenemeyen kodlamalar sessizce dönüştürülmez.
+- Yer tutucu/etiket doğrulaması servis sınırında uygulanır; eksik, fazla, türü/sırası değişmiş yer tutucular dosya değiştirilmeden reddedilir. Yalnızca stil/uzunluk uyarıları engel değildir.
+- Replace sonrası doğrulama/veritabanı/kurtarma adımları kullanıcı iptalinden bağımsız tamamlanır; geri yükleme başarısızsa yedek korunur.
+- `GlossaryTerm` tablosu çeviri akışına tam bağlı değil; çeviri belleği artık oyun kapsamı + bağlam + çoğul biçim kimliğiyle tam eşleşmeli çalışıyor, dosya tabanlı günlük ve yerleşik sözlük de kullanılmaya devam ediyor.
 - Sağlayıcı profili/yönetim ekranı ve API anahtarı saklama arayüzü yok; anahtar ortam değişkeninden okunur.
 - Tam katalog senkronizasyonu ve büyük dosya önizlemesi için ayrıntılı ilerleme/iptal deneyimi sınırlı.
 
@@ -393,6 +397,19 @@ powershell -ExecutionPolicy Bypass -File ".\scripts\validate-project.ps1"
 ```
 
 AI çeviri için varsayılan yerel LM Studio uç noktası `http://127.0.0.1:1234/v1` olarak ayarlıdır. Kimlik doğrulaması gereken bir sağlayıcı kullanılacaksa `GLE_LLM_API_KEY` ortam değişkeni tanımlanabilir.
+
+Gerçek dosya + yerel LLM entegrasyon testi normal test paketinde **skipped** görünür. Ayrı çalıştırmak için:
+
+```powershell
+$env:GLE_REAL_LOCAL_TEST = '1'
+$env:GLE_REAL_FILE = 'C:\oyun\Localization\dosya.xml'
+$env:GLE_REAL_ENDPOINT = 'http://127.0.0.1:1234/v1'
+$env:GLE_REAL_MODEL = 'model-adı'
+# İsteğe bağlı: $env:GLE_REAL_LIMIT = '10'
+dotnet test ".\\tests\\Tests\\GameLanguageExplorer.Tests.csproj" --filter "FullyQualifiedName~RealLocalTranslationIntegrationTests"
+```
+
+CI iş akışı `.github/workflows/windows-ci.yml` içinde Windows üzerinde restore, Release build ve test çalıştırır; TRX sonuçları başarısız olsa da artifact olarak yüklenir. Gerçek oyun dosyası, LLM sunucusu veya API anahtarı gerektirmez.
 
 ## Dokümantasyon
 

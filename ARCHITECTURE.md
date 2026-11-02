@@ -94,7 +94,7 @@ Aşağıdaki varlıklar SQLite veritabanında saklanır:
 - **LocalizationProject** - Yerelleştirme projeleri
 - **LocalizationEntry** - Yerelleştirme girişleri (anahtar, kaynak metin, çeviri)
 - **GlossaryTerm** - Terim sözlüğü
-- **TranslationMemoryEntry** - Çeviri belleği
+- **TranslationMemoryEntry** - Çeviri belleği; kaynak/hedef dil yanında `ScopeKey`, `Context`, `PluralIndex` ve `PluralCount` ile benzersiz kimlik. Eski kayıtlar migration’da `legacy:<id>` kapsamına taşınır ve yeni bağlamlı kayıtlarla otomatik eşleşmez.
 - **BackupRecord** - Yedekleme kayıtları
 - **PluginRegistration** - Eklenti kayıtları
 
@@ -114,20 +114,24 @@ Aşağıdaki varlıklar SQLite veritabanında saklanır:
 - Katalog araması (büyük/küçük harf duyarsız, ilk 100 sonuç)
 - **Steam, Epic, GOG, Ubisoft, EA ve Xbox kurulu oyun taraması (salt okunur)** — `InstalledGamesView`
 - SQLite şeması, migration'lar ve başlangıçta otomatik migration uygulama
-- Hata/uyarı gösterimi: senkronizasyon, arama, tarama ve veritabanı hataları UI'da bildirilir
+- Dil dosyası adaptörleri: JSON, YAML, XML, CSV, TSV, PO, POT, INI ve LocresCSV okuma/önizleme
+- **JSON/CSV/PO/INI güvenli yazma**: `BackupRecord` + geçici dosya + gerçek bayt SHA-256 + atomik taşıma;
+  kaynak kodlama/BOM korunur, önizleme kaynak hash’i sabitlenir, yer tutucu doğrulaması yapılır,
+  replace sonrası iptalden bağımsız doğrulama/DB/kurtarma uygulanır.
+- AI Çeviri motoru: OpenAI uyumlu sağlayıcı, parti/retry, kalite kontrolü, günlük, iptal ve onaylı “Dosyaya Yaz”
+- Seçim değişikliğinde geç gelen önizleme/çeviri/progress sonuçlarını istek kimliği, oyun/dosya kimliği ve
+  kaynak SHA-256 ile sınırlayan ViewModel akışı
+- Bağlam/çoğul/oyun kapsamı duyarlı çeviri belleği; eski kayıtlar silinmeden `legacy:<id>` kapsamına taşınır
 - `BackupRecord` tabanlı yedek yönetimi: listeleme, arama, onaylı geri yükleme ve güvenli silme
+- Hata/uyarı gösterimi: senkronizasyon, arama, tarama ve veritabanı hataları UI'da bildirilir
 
 **Uygulanmadı / eksik:**
 - Mağaza paketleri için ek doğrulama ve filtreleme iyileştirmeleri
-- Dil dosyası adaptörleri: okuma (JSON, YAML, XML, CSV, TSV, PO, POT, INI, LocresCSV). MO/TXT/
-  STRINGS/LOC ve paket formatları için ayrıştırıcı yoktur. **Güvenli yazma JSON, CSV, PO ve INI** için
-  vardır; diğer formatlarda yazma desteği yoktur.
+- MO/TXT/STRINGS/LOC ve paket formatları için ayrıştırıcı yoktur; YAML salt okunurdur.
 - Eklenti sistemi (`IGameFormatPlugin` yalnızca arayüz)
-- AI çeviri motoru
-- JSON/CSV/PO/INI güvenli yazma servisi (`BackupRecord` + geçici dosya + SHA-256 + atomik taşıma) ve
-  AI Çeviri ekranında onaylı “Dosyaya Yaz” komutu vardır; diğer formatlar henüz yoktur.
 - Oyun profili ve kaynak/doğrulama ekranı (`GameProfile` tablosu var, kullanılmıyor)
 - Tam katalog senkronizasyonu için ilerleme göstergesi (yalnızca belirsiz ilerleme çubuğu var)
+- Kontrol–kullanım arasındaki TOCTOU yarışı tamamen ortadan kaldırılamaz; SHA-256 ve atomik taşıma ile azaltılır.
 
 ## Kurulu Oyun Tespiti (Salt Okunur)
 

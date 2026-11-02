@@ -1,10 +1,11 @@
 # Supported Formats - Game Language Explorer
 
-## Aşama 3: Okuma (ayrıştırma) desteği
+## Okuma (ayrıştırma) ve yazma desteği
 
-Bu aşamada **JSON, XML, CSV/TSV, PO/POT, INI, YAML ve LocresCSV** dosyaları ayrıştırılabilir.
+**JSON, XML, CSV/TSV, PO/POT, INI, YAML ve LocresCSV** dosyaları ayrıştırılabilir.
 **JSON, CSV, PO ve INI için güvenli yazma altyapısı** vardır; diğer formatlarda yazma desteği yoktur.
 JSON, CSV, PO ve INI adaptörlerinde `SupportsWrite=true`, diğer adaptörlerde `false` değerindedir.
+Yazma sırasında kaynak kodlama/BOM korunur, kaynak SHA-256 sabitlenir ve yer tutucu/etiket doğrulaması tüm yazma yollarında zorunludur.
 
 | Format | Uzantılar | Keşif | Okuma (önizleme) | Yazma | Notlar |
 |--------|-----------|-------|------------------|-------|--------|
@@ -85,12 +86,15 @@ değiştirilmez veya yeniden serileştirilmez.
 
 JSON, CSV, PO ve INI için yazma akışı şu sırayla çalışır:
 
-1. Orijinal dosyanın SHA-256 değeri doğrulanır.
-2. Dosya yedeklenir ve `BackupRecord` tablosuna kaydedilir.
-3. Yeni içerik aynı klasörde geçici dosyaya yazılır.
-4. Geçici dosyanın SHA-256 değeri beklenen içerikle karşılaştırılır.
-5. Doğrulama başarılıysa dosya atomik olarak orijinalin üzerine taşınır.
-6. Son içerik tekrar doğrulanır; hata olursa yedekten geri yükleme denenir.
+1. Kaynak kodlama/BOM belirlenir; güvenilir değilse yazma reddedilir.
+2. Orijinal dosyanın SHA-256 değeri, DB kaydı ve önizleme sürümüyle karşılaştırılır.
+3. Her çeviri için yer tutucu/etiket yapısı doğrulanır; eksik/fazla/değişmiş işaret varsa dosya değiştirilmez.
+4. Dosya yedeklenir ve `BackupRecord` tablosuna kaydedilir.
+5. Yeni içerik, kaynak kodlama/BOM ile aynı klasörde geçici dosyaya yazılır.
+6. Beklenen SHA-256 ve boyut gerçek baytlar üzerinden hesaplanır; geçici dosya doğrulanır.
+7. Doğrulama başarılıysa dosya atomik olarak orijinalin üzerine taşınır.
+8. Replace sonrası son doğrulama, DB güncellemesi ve gerekli kurtarma kullanıcı iptalinden bağımsız tamamlanır.
+9. Hata olursa yedekten geri yükleme denenir; geri yükleme başarısızsa yedek korunur ve sonuç açıkça bildirilir.
 
 JSON'da yalnızca mevcut string değerleri JSON Pointer ile değiştirilir. CSV'de yalnızca
 başlıkta tanınan çeviri sütunu (`translation`, `target`, `translated` vb.) güncellenir;
@@ -119,7 +123,7 @@ diğer formatlarda yazma komutu pasiftir.
 | INI değerleri | Boş/sayısal/boolean/yol değerleri `Atlandı`; metinler `Çevrilebilir` |
 | INI teknik dosya | Çevrilebilir oran düşükse ve yol/klasörde ipucu yoksa uyarı verilir |
 | YAML kapsamı | Blok eşleme/liste, tırnaklı skaler, yorum, `\|`/`>` blok metni ve basit flow `[]`/`{}` desteklenir; çapa/alias, etiket ve karmaşık anahtarlar desteklenmez |
-| Kodlama | UTF-8 / UTF-16 (BOM algılama); diğerleri okunabilir hata ile reddedilir |
+| Kodlama | UTF-8, UTF-8 BOM, UTF-16 LE/BE BOM ve UTF-32 BOM okunur; yazmada kaynak kodlama/BOM korunur. Güvenilir belirlenemeyen kodlamalar sessiz dönüştürülmeden reddedilir |
 | Boyut | Varsayılan 32 MB üstü reddedilir |
 | Güvenlik | XML'de DTD kapalı, harici çözümleyici yok (XXE engellenir) |
 

@@ -24,6 +24,20 @@
 2. **Doğrulama Durumu** - Her bilginin kaynağı ve doğrulama durumu (Verified/Predicted/Unknown) belirtilmelidir.
 3. **Tahmin Ayırt Ediciliği** - Kesin bilgi olmayan alanlar tahmin olarak işaretlenmeli, gerçek olarak gösterilmemelidir.
 
+### Yazma, İptal ve Kurtarma
+
+1. **Kritik Nokta** - Dosyanın atomik olarak değiştirildiği noktadan sonra doğrulama, veritabanı güncellemesi ve gerekli geri yükleme kullanıcı iptalinden bağımsız tamamlanır.
+2. **Kodlama/BOM** - Kaynak kodlama ve BOM korunur. Güvenilir belirlenemeyen kodlamalar sessizce UTF-8'e dönüştürülmez; yazma reddedilir.
+3. **Yer Tutucu Doğrulaması** - Eksik/fazla/türü veya sırası değişmiş yer tutucular tüm yazma yollarında dosya değiştirilmeden reddedilir. Stil/uzunluk uyarıları tek başına engel değildir.
+4. **Kaynak Sürümü** - Önizlemede sabitlenen SHA-256 ile yazma anındaki dosya eşleşmezse eski çeviri yazılmaz.
+5. **Kurtarma** - Geri yükleme başarısızsa yedek korunur ve sonuç bunu açıkça bildirir.
+
+### Yol Güvenliği
+
+1. **Kök Sınırı** - Önizleme, yazma ve geri yükleme yalnızca kayıtlı kurulum kökü; yedek silme yalnızca yapılandırılmış yedek kökü altında çalışır.
+2. **Bağlantı Çözümü** - Dosya ve ara klasör junction/symlink hedefleri çözülür; kök dışına çıkan hedefler reddedilir.
+3. **TOCTOU Sınırı** - Kontrol ile dosya kullanımı arasındaki yarış tamamen garanti edilemez. Uygulama okuma/yazma sırasında SHA-256 ve atomik taşıma ile riski azaltır; işletim sistemi düzeyinde değiştirilebilen bağlantılar için mutlak garanti verilmez.
+
 ### Eklenti Güvenliği
 
 1. **Bilinmeyen Eklentiler** - Otomatik olarak çalıştırılmamalıdır.

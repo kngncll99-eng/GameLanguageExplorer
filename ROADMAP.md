@@ -1,89 +1,65 @@
 # Roadmap - Game Language Explorer
 
-## Aşama 1: Proje Iskeleti, WPF Arayüzü, SQLite ve Dokümantasyon (TAMAMLANDI)
+Bu dosya, uygulanmış özellikler ile açık işleri ayırır. Tamamlanmış maddeler kodda ve testlerde doğrulanmıştır; gerçek oyun dosyası/LLM gerektiren entegrasyon testi ayrı ve varsayılan olarak skipped çalışır.
 
-### Tamamlananlar
-- [x] .NET 10 solution ve 4 proje oluşturuldu (Core, Data, WPF, Tests)
-- [x] NuGet paketleri yapılandırıldı (EF Core SQLite, CommunityToolkit.Mvvm, DI, Logging)
-- [x] 14 veritabanı varlığı tanımlandı (Game, GamePlatform, CatalogSource, vb.)
-- [x] EF Core migration (InitialCreate) oluşturuldu
-- [x] WPF koyu tema arayüzü oluşturuldu (Shell, CatalogView)
-- [x] Temel navigasyon (ShellViewModel, Katalog navigasyonu)
-- [x] Dependency Injection konteynerı yapılandırıldı
-- [x] 4 xUnit birim testi yazıldı ve geçti
-- [x] Dokümantasyon dosyaları oluşturuldu (README, ARCHITECTURE, ROADMAP, vb.)
+## Tamamlananlar
 
-### Test Sonuçları
-- `dotnet build`: ✅ Başarılı (tüm projeler)
-- `dotnet test`: ✅ Başarılı (4/4 test)
+### 1. Proje iskeleti ve masaüstü uygulama
+- [x] .NET 10 solution: Core, Data, WPF, Tests
+- [x] EF Core SQLite, CommunityToolkit.Mvvm, DI ve logging
+- [x] WPF Shell, koyu/açık tema ve MVVM navigasyon
+- [x] Katalog, Kurulu Oyunlar, Dil Keşfi, AI Çeviri, Editör, Çeviri Belleği ve Yedekler ekranları
 
-## Aşama 2: Global Game Catalog, İlk Katalog Sağlayıcısı ve Oyun Arama Ekranı
+### 2. Katalog ve kurulu oyun keşfi
+- [x] Steam katalog arama/senkronizasyon temeli
+- [x] Steam, Epic, GOG, Ubisoft, EA App ve Xbox için salt okunur kurulu oyun keşfi
+- [x] Manuel oyun klasörü ekleme
+- [x] Kurulum kayıtlarının SQLite'ta tutulması
 
-### Planlananlar
-- [ ] IGameCatalogProvider arayüzünün Steam uygulaması
-- [ ] Steam Web API entegrasyonu (api.steampowered.com)
-- [ ] Katalog senkronizasyonu (periyodik güncelleme)
-- [ ] Oyun arama, filtreleme, sıralama
-- [ ] Yerel SQLite veritabanında katalog saklama
-- [ ] Değişiklik bazlı güncelleme (sadece değişen kayıtlar)
+### 3. Dil dosyası keşfi ve önizleme
+- [x] JSON, XML, CSV, TSV, PO, POT, INI, YAML ve LocresCSV okuma/önizleme
+- [x] Format, güven düzeyi ve kanıt raporlama
+- [x] SHA-256 ve boyut sınırları
+- [x] YAML'de blok/flow yapılar, `a.b` ve `a[0].b` yolları (salt okunur)
 
-## Aşama 3: Her Oyun İçin Ayrıntılı Profil ve Kaynak/Doğrulama Altyapısı
+### 4. Güvenli yazma
+- [x] JSON, CSV, PO ve INI için yedek → geçici dosya → SHA-256 → atomik taşıma → geri yükleme
+- [x] Kaynak kodlama/BOM koruma (UTF-8, UTF-8 BOM, UTF-16 LE/BE BOM)
+- [x] Kaynak sürüm/hash kontrolü; önizlemeden sonra değişen dosyayı reddetme
+- [x] Yazma sınırında yer tutucu/etiket doğrulaması
+- [x] Replace sonrası iptalden bağımsız doğrulama/DB/kurtarma
+- [x] Metinsel kök + ara junction/symlink çözümlü yol güvenliği
+- [x] Yedek listeleme, onaylı geri yükleme ve güvenli silme
 
-### Planlananlar
-- [ ] GameProfile detaylı görünüm
-- [ ] Kaynak ve doğrulama durumu takibi (Verified / Predicted / Unknown)
-- [ ] Kapak görseli, açıklama, geliştirici, yayıcı bilgileri
-- [ ] Desteklenen diller (arayüz, ses, altyazı)
-- [ ] Bilinen dil dosyası uzantıları ve konumları
+### 5. Editör ve AI çeviri
+- [x] Yan yana kaynak/hedef editörü; değişiklik takibi başlangıç çevirisine göre
+- [x] OpenAI uyumlu yerel LLM istemcisi
+- [x] Parti/retry, kalite kontrolü, çalışma günlüğü ve iptal
+- [x] Seçim değişikliğinde geç gelen önizleme/çeviri/progress sonuçlarını yalnızca doğru dosyaya uygulama
+- [x] JSON/CSV/PO dışa aktarma
 
-## Aşama 4: Steam, Epic ve Ubisoft Kurulu Oyun Keşfi
+### 6. Çeviri belleği
+- [x] Tam eşleşmeli yeniden kullanım
+- [x] Oyun kapsamı + bağlam + çoğul biçim kimliği
+- [x] Eski kayıtları silmeden `legacy:<id>` kapsamına taşıyan migration
+- [x] Benzersiz indeks ve eşzamanlı kayıt koruması
+- [x] Listeleme, arama ve onaylı silme ekranı
 
-### Planlananlar
-- [ ] IInstalledGameProvider arayüzü
-- [ ] Steam kütüphane taraması (libraryfolders.vdf, appmanifest_*.acf)
-- [ ] Epic Games kurulum kayıtları
-- [ ] Ubisoft Connect kurulum kayıtları
-- [ ] Elle oyun klasörü ekleme
-- [ ] Asenkron ve iptal edilebilir tarama
+### 7. Test ve CI
+- [x] xUnit birim/entegrasyon testleri
+- [x] Gerçek LLM/oyun dosyası testi ortam değişkenleriyle açık skip
+- [x] Windows CI: .NET 10 restore, Release build, test ve TRX artifact
+- [x] `scripts/validate-project.ps1` ile salt okunur doğrulama raporu
 
-## Aşama 5: Dil Dosyası Tarama, Format Tanıma ve İlk Editör
+## Açık İşler
 
-### Planlananlar
-- [ ] XML, JSON, CSV, TSV, TXT, INI, YAML, PO format adaptörleri
-- [ ] Dosya yapısına göre format doğrulama (uzantı sadece ipucu)
-- [ ] SHA-256 hesaplama
-- [ ] Metin kayıtları keşfi
-- [ ] Yan yana kaynak/hedef editör
-
-## Aşama 6: Yedekleme, Güvenli Dışa Aktarım ve Geri Yükleme
-
-### Planlananlar
-- [ ] Orijinal dosya yedekleme (değişiklik öncesi)
-- [ ] SHA-256 bütünlük doğrulama
-- [ ] Geçici dosyaya yaz ve doğrula modeli
-- [ ] Geri yükleme ve değişiklik geçmişi
-- [ ] Ayrı çıktı klasörüne dışa aktarma (varsayılan)
-
-## Aşama 7: Eklenti Sistemi ve Motor Özelindeki Formatlar
-
-### Planlananlar
-- [ ] ILocalizationFormatAdapter ve IGameFormatPlugin sözleşmeleri
-- [ ] Unity, Unreal Engine adaptörleri
-- [ ] Arşiv biçimi adaptörleri
-- [ ] Eklenti kaydı ve sürüm uyumluluğu
-
-## Aşama 8: AI ile Türkçe Çeviri
-
-### Planlananlar
-- [ ] AI sağlayıcı arayüzü (OpenAI uyumlu yerel uç nokta)
-- [ ] Değişken, etiket ve biçimlendirme kodunu koruma
-- [ ] Çeviri belleği ve terim sözlüğü
-- [ ] Yerel LLM bağlantısı (isteğe bağlı)
-
-## Aşama 9: Diğer Mağazalar, Performans, Testler ve Windows Dağıtımı
-
-### Planlananlar
-- [ ] GOG, EA app, Xbox katalog sağlayıcıları
-- [ ] Performans optimizasyonu
-- [ ] Kapsamlı testler
-- [ ] Windows MSI/EXE dağıtım paketi
+- [ ] Unreal `.locres`/`.uasset` ve şifreli `.pak` içerikleri
+- [ ] `MO`, `TXT`, `STRINGS`, `LOC` ayrıştırıcıları
+- [ ] `.locres`/PAK için gerçek NTE doğrulaması
+- [ ] `GlossaryTerm` tablosunun çeviri akışına tam bağlanması
+- [ ] Sağlayıcı profili, güvenli API anahtarı saklama ve yönetim ekranı
+- [ ] Editörde arama/filtreleme, toplu düzenleme ve değişiklik geçmişi
+- [ ] XLIFF/XML dışa aktarma ve şablonlar
+- [ ] `IGameFormatPlugin` yükleme/sürüm/güvenlik altyapısı
+- [ ] Windows installer, sürümleme ve kod imzalama
+- [ ] Core/Data testlerini WPF test projesinden ayırma (mevcut keşfi bozmadan değerlendirilecek)
