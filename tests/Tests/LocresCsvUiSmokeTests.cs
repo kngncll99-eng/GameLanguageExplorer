@@ -197,7 +197,9 @@ public class LocresCsvRenderSmokeTests
     [Fact]
     public void PreviewView_RendersInDarkAndLightThemes()
     {
-        var outDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "gle_locres_render");
+        var outDir = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "gle_locres_render_" + Guid.NewGuid().ToString("N"));
         System.IO.Directory.CreateDirectory(outDir);
 
         Exception? failure = null;

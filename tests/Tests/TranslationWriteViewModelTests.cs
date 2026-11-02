@@ -221,7 +221,8 @@ public class TranslationWriteViewModelTests
             int discoveredFileId,
             IReadOnlyDictionary<string, string> translations,
             CancellationToken cancellationToken = default,
-            IProgress<LocalizationWriteProgress>? progress = null)
+            IProgress<LocalizationWriteProgress>? progress = null,
+            string? expectedSourceSha256 = null)
         {
             Translations = translations;
 

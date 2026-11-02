@@ -135,6 +135,10 @@ public class TranslationEngineTests
                 TargetText = "Oyna",
                 SourceLanguage = "English",
                 TargetLanguage = "Turkish",
+                ScopeKey = "game:10",
+                Context = string.Empty,
+                PluralIndex = -1,
+                PluralCount = -1,
                 UsageCount = 1
             });
             await context.SaveChangesAsync();

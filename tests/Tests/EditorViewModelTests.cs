@@ -145,6 +145,45 @@ public class EditorViewModelTests
         Assert.False(editor.SaveCommand.CanExecute(null));
     }
 
+    [Fact]
+    public async Task ExistingPoTranslation_StartsWithZeroChanges_AndSaveRefreshesBaseline()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+
+        var path = tree.Write(
+            @"Localization\menu.po",
+            "msgid \"Play\"\nmsgstr \"Oyna\"\n");
+        var (_, fileId) = await PreviewTestHelper.CreateInstallAndFileAsync(
+            database, tree.Root, path, "PO");
+
+        using (var context = database.CreateContext())
+        {
+            var record = context.DiscoveredFiles.Single(file => file.Id == fileId);
+            record.FileSize = new FileInfo(path).Length;
+            record.Sha256 = ComputeSha256(path);
+            context.SaveChanges();
+        }
+
+        var editor = CreateEditor(database, tree.Root, new RecordingConfirmationService());
+        await editor.LoadEntriesCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(editor.Entries);
+        Assert.Equal("Oyna", row.TranslationText);
+        Assert.False(row.IsChanged);
+        Assert.Equal(0, editor.ChangedCount);
+
+        row.TranslationText = "Play";
+        Assert.True(row.IsChanged);
+        Assert.Equal(1, editor.ChangedCount);
+
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.True(editor.SaveErrorMessage is null, editor.SaveErrorMessage);
+
+        Assert.Equal(0, editor.ChangedCount);
+        Assert.Contains("msgstr \"Play\"", await File.ReadAllTextAsync(path));
+    }
+
     private static EditorViewModel CreateEditor(
         TempDatabase database,
         string root,
@@ -161,7 +200,8 @@ public class EditorViewModelTests
         var registry = new LocalizationFormatAdapterRegistry(new ILocalizationFormatAdapter[]
         {
             new JsonLocalizationAdapter(),
-            new CsvLocalizationAdapter()
+            new CsvLocalizationAdapter(),
+            new PoLocalizationAdapter()
         });
         var writeService = new LocalizationWriteService(
             database.CreateFactory(),

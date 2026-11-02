@@ -107,6 +107,7 @@ public class BackupManagementTests
 
         var original = tree.Write(@"Localization\menu.json", """{"x":"new"}""");
         var backup = WriteFile(backupDirectory, "menu.bak", """{"x":"old"}""");
+        await PreviewTestHelper.CreateInstallAndFileAsync(database, tree.Root, original, "JSON");
         AddRecord(database, original, backup);
 
         var confirmation = new RecordingConfirmationService(true);
@@ -129,6 +130,38 @@ public class BackupManagementTests
         using var context = database.CreateContext();
         Assert.True(context.BackupRecords.Single().IsRestored);
         Assert.NotNull(context.BackupRecords.Single().RestoredAt);
+    }
+
+    [Fact]
+    public async Task Restore_WithoutInstallRecord_ExplainsReasonAndKeepsBackup()
+    {
+        using var database = new TempDatabase();
+        using var tree = new TempTree();
+        var backupDirectory = Path.Combine(tree.Root, "backups");
+        Directory.CreateDirectory(backupDirectory);
+
+        var original = tree.Write(@"Localization\menu.json", """{"x":"new"}""");
+        var backup = WriteFile(backupDirectory, "menu.bak", """{"x":"old"}""");
+        var recordId = AddRecord(database, original, backup);
+
+        var service = new LocalizationWriteService(
+            database.CreateFactory(),
+            new LocalizationFormatAdapterRegistry(Array.Empty<ILocalizationFormatAdapter>()),
+            new LocalizationWriteOptions { BackupDirectory = backupDirectory });
+
+        var result = await service.RestoreAsync(recordId);
+
+        Assert.False(result.Success);
+        Assert.Equal(LocalizationWriteStatus.PathRejected, result.Status);
+        Assert.Contains("kurulum/dosya kaydı bulunamadı", result.Message, StringComparison.Ordinal);
+        Assert.Contains("Yedek bozuk olduğu için değil", result.Message, StringComparison.Ordinal);
+        Assert.Contains(backup, result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(backup, result.BackupFilePath);
+        Assert.True(File.Exists(backup));
+        Assert.Equal("""{"x":"new"}""", await File.ReadAllTextAsync(original));
+
+        using var context = database.CreateContext();
+        Assert.Single(context.BackupRecords);
     }
 
     [Fact]

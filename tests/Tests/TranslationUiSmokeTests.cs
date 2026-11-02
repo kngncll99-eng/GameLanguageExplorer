@@ -28,7 +28,9 @@ public class TranslationUiSmokeTests
     public void TranslationView_LoadsPreviewAndRenders()
     {
         Exception? failure = null;
-        var output = Path.Combine(Path.GetTempPath(), "gle_translation_ui.png");
+        var output = Path.Combine(
+            Path.GetTempPath(),
+            "gle_translation_ui_" + Guid.NewGuid().ToString("N") + ".png");
 
         var thread = new Thread(() =>
         {

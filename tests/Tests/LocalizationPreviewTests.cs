@@ -74,6 +74,31 @@ public static class PreviewTestHelper
 
         return (install.Id, file.Id);
     }
+
+    /// <summary>Var olan bir kuruluma ikinci bir keşfedilmiş dosya kaydı ekler.</summary>
+    public static async Task<int> AddFileAsync(
+        TempDatabase database,
+        int installId,
+        string filePath,
+        string detectedFormat = "JSON")
+    {
+        using var context = database.CreateContext();
+
+        var file = new DiscoveredFile
+        {
+            InstalledGameId = installId,
+            FilePath = filePath,
+            FileName = System.IO.Path.GetFileName(filePath),
+            Sha256 = string.Empty,
+            DetectedFormat = detectedFormat,
+            DetectionConfidence = "Low",
+            IsReadable = true
+        };
+
+        context.DiscoveredFiles.Add(file);
+        await context.SaveChangesAsync();
+        return file.Id;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

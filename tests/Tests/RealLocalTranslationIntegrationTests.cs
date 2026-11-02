@@ -15,26 +15,37 @@ using GameLanguageExplorer.Core.Services.Translation;
 /// çalışmaz; <c>GLE_REAL_LOCAL_TEST=1</c> verilerek açıkça istenmelidir. Sentetik test
 /// sonucu ile karıştırılmaması için ayrı dosyada tutulur.
 /// </summary>
-public class RealLocalTranslationIntegrationTests
+/// <summary>
+/// Yalnızca <c>GLE_REAL_LOCAL_TEST=1</c> verildiğinde keşfedilen gerçek entegrasyon
+/// testi. Koşul sağlanmazsa xUnit testi açıkça <c>Skipped</c> olarak raporlar.
+/// </summary>
+public sealed class RealIntegrationFactAttribute : FactAttribute
 {
-    private const string RealFile =
-        @"C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\Native\ModuleData\Languages\std_TaleWorlds_MountAndBlade_ViewModelCollection.xml";
-
-    private const string Endpoint = "http://127.0.0.1:1234/v1";
-    private const string Model = "huihui-qwen3-8b-abliterated-v2";
-
-    [Fact]
-    public async Task RealBannerlordFile_TranslatesThroughLocalLmStudio()
+    public RealIntegrationFactAttribute()
     {
         if (!string.Equals(
                 Environment.GetEnvironmentVariable("GLE_REAL_LOCAL_TEST"),
                 "1",
                 StringComparison.Ordinal))
         {
-            return;
+            Skip = "Gerçek dosya/LLM gerektirir. GLE_REAL_LOCAL_TEST=1 ve GLE_REAL_FILE, "
+                   + "GLE_REAL_ENDPOINT, GLE_REAL_MODEL ortam değişkenleriyle ayrı çalıştırın.";
         }
+    }
+}
 
-        Assert.True(File.Exists(RealFile), "Gerçek test dosyası bulunamadı.");
+public class RealLocalTranslationIntegrationTests
+{
+    private static string RealFile => RequiredEnvironment("GLE_REAL_FILE");
+
+    private static string Endpoint => RequiredEnvironment("GLE_REAL_ENDPOINT");
+
+    private static string Model => RequiredEnvironment("GLE_REAL_MODEL");
+
+    [RealIntegrationFact]
+    public async Task RealBannerlordFile_TranslatesThroughLocalLmStudio()
+    {
+        Assert.True(File.Exists(RealFile), "Gerçek test dosyası bulunamadı: " + RealFile);
 
         var limitText = Environment.GetEnvironmentVariable("GLE_REAL_LIMIT");
         var limit = int.TryParse(limitText, out var parsed) && parsed > 0 ? parsed : 10;
@@ -154,7 +165,9 @@ public class RealLocalTranslationIntegrationTests
                 $"{(unit.Translation ?? "—").ReplaceLineEndings(" ")} | {unit.DecisionReason}");
         }
 
-        var output = Path.Combine(Path.GetTempPath(), "gle-real-run-result.txt");
+        var output = Path.Combine(
+            Path.GetTempPath(),
+            "gle-real-run-result-" + Guid.NewGuid().ToString("N") + ".txt");
         await File.WriteAllTextAsync(output, summary.ToString(), Encoding.UTF8);
         Assert.True(File.Exists(output));
 
@@ -220,7 +233,9 @@ public class RealLocalTranslationIntegrationTests
             WriteIndented = true,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         });
-        var exportPath = Path.Combine(Path.GetTempPath(), "gle-real-run-units.json");
+        var exportPath = Path.Combine(
+            Path.GetTempPath(),
+            "gle-real-run-units-" + Guid.NewGuid().ToString("N") + ".json");
         await File.WriteAllTextAsync(exportPath, exportJson, new UTF8Encoding(false));
         Assert.True(File.Exists(exportPath));
 
@@ -283,6 +298,19 @@ public class RealLocalTranslationIntegrationTests
                 throw;
             }
         }
+    }
+
+    private static string RequiredEnvironment(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Gerçek entegrasyon testi için '{name}' ortam değişkeni zorunludur.");
+        }
+
+        return value.Trim();
     }
 
     private sealed record RecordedRequest(

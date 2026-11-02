@@ -1,9 +1,11 @@
 namespace GameLanguageExplorer.Tests;
 
 using GameLanguageExplorer.Core.Entities;
+using GameLanguageExplorer.Core.Services.Translation;
 using GameLanguageExplorer.Data.Services;
 using GameLanguageExplorer.WPF.Services;
 using GameLanguageExplorer.WPF.ViewModels;
+using Microsoft.EntityFrameworkCore;
 
 /// <summary>Çeviri belleği listeleme/silme servisi ve ekran ViewModel'i.</summary>
 public class TranslationMemoryTests
@@ -53,6 +55,117 @@ public class TranslationMemoryTests
 
         Assert.Equal(3, await service.DeleteAllAsync());
         Assert.Empty(await service.GetEntriesAsync());
+    }
+
+    [Fact]
+    public async Task SameSource_DifferentContexts_AreStoredAndReturnedSeparately()
+    {
+        using var database = new TempDatabase();
+        var service = new TranslationMemoryService(database.CreateFactory());
+
+        var menu = new TranslationMemoryContext("game:1", "menu");
+        var toolbar = new TranslationMemoryContext("game:1", "toolbar");
+
+        await service.SaveAsync("Play", "Oyna", "English", "Turkish", menu);
+        await service.SaveAsync("Play", "Başlat", "English", "Turkish", toolbar);
+
+        Assert.Equal("Oyna", await service.FindExactAsync("Play", "English", "Turkish", menu));
+        Assert.Equal("Başlat", await service.FindExactAsync("Play", "English", "Turkish", toolbar));
+
+        var entries = await service.GetEntriesAsync();
+        Assert.Equal(2, entries.Count);
+        Assert.Equal(2, entries.Select(entry => entry.Context).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task LegacyRecord_WithUnknownContext_IsNotReusedForGameScope()
+    {
+        using var database = new TempDatabase();
+
+        using (var context = database.CreateContext())
+        {
+            context.TranslationMemoryEntries.Add(new TranslationMemoryEntry
+            {
+                SourceText = "Play",
+                TargetText = "Eski çeviri",
+                SourceLanguage = "English",
+                TargetLanguage = "Turkish",
+                ScopeKey = "legacy:1",
+                Context = string.Empty,
+                PluralIndex = -1,
+                PluralCount = -1
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var service = new TranslationMemoryService(database.CreateFactory());
+        var found = await service.FindExactAsync(
+            "Play",
+            "English",
+            "Turkish",
+            new TranslationMemoryContext("game:1", string.Empty));
+
+        Assert.Null(found);
+    }
+
+    [Fact]
+    public async Task ConcurrentSaves_DoNotCreateDuplicateIdentityRows()
+    {
+        using var database = new TempDatabase();
+        var service = new TranslationMemoryService(database.CreateFactory());
+        var context = new TranslationMemoryContext("game:7", "menu");
+
+        await Task.WhenAll(Enumerable.Range(0, 6)
+            .Select(index => service.SaveAsync(
+                "Play",
+                "Çeviri " + index,
+                "English",
+                "Turkish",
+                context)));
+
+        using var readContext = database.CreateContext();
+        var entry = Assert.Single(readContext.TranslationMemoryEntries);
+        Assert.Equal("game:7", entry.ScopeKey);
+        Assert.Equal("menu", entry.Context);
+        Assert.StartsWith("Çeviri ", entry.TargetText);
+    }
+
+    [Fact]
+    public async Task LegacyMigration_PreservesRows_AndMarksScopeUnknown()
+    {
+        using var database = new TempDatabase(ensureCreated: false);
+
+        await using (var context = database.CreateContext())
+        {
+            await context.Database.MigrateAsync("20261101191417_AddTranslationMemoryLanguages");
+            await context.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO "TranslationMemoryEntries"
+                    ("SourceText", "TargetText", "SourceLanguage", "TargetLanguage",
+                     "UsageCount", "LastUsedAt", "CreatedAt")
+                VALUES
+                    ('Play', 'Oyna', 'English', 'Turkish', 1, NULL, CURRENT_TIMESTAMP),
+                    ('Play', 'Başla', 'English', 'Turkish', 1, NULL, CURRENT_TIMESTAMP);
+                """);
+
+            await context.Database.MigrateAsync();
+
+            var rows = await context.TranslationMemoryEntries
+                .AsNoTracking()
+                .OrderBy(entry => entry.Id)
+                .ToListAsync();
+
+            Assert.Equal(2, rows.Count);
+            Assert.All(rows, row => Assert.StartsWith("legacy:", row.ScopeKey));
+            Assert.All(rows, row => Assert.Equal(-1, row.PluralIndex));
+        }
+
+        var service = new TranslationMemoryService(database.CreateFactory());
+        Assert.Null(await service.FindExactAsync(
+            "Play",
+            "English",
+            "Turkish",
+            new TranslationMemoryContext("game:1", string.Empty)));
     }
 
     [Fact]
